@@ -1,0 +1,87 @@
+.valid {
+   background-color: #cec;
+}
+.hex {
+    float: left;
+    margin-left: 2px;
+    margin-bottom: -12px;
+}
+.hex .top {
+    width: 0;
+    border-left: 22px solid transparent;
+    border-right: 22px solid transparent;
+}
+.hex .middle {
+    width: 45px;
+    height: 26px;
+    text-align: center;
+}
+.hex .bottom {
+    width: 0;
+    border-left: 22px solid transparent;
+    border-right: 22px solid transparent;
+}
+.hex-row {
+    clear: left;
+}
+.hex-row.even {
+    margin-left: 23px;
+}
+
+
+.hex .top[land="p"] {
+    border-bottom: 14px solid #6C6;
+}
+.hex .top[city="t"] {
+    border-bottom: 14px solid #88f;
+}
+
+.hex .middle[land="p"] {
+    background-color: #6c6;
+}
+.hex .middle[city="t"] {
+    background-color: #88f;
+}
+
+.hex .bottom[land="p"] {
+    border-top: 14px solid #6c6;
+}
+.hex .bottom[city="t"] {
+    border-top: 14px solid #88f;
+}
+.hex .middle.valid {
+   background-image: linear-gradient(-30deg, rgba(255, 255, 255, .2) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, .2) 50%, rgba(255, 255, 255, .2) 75%, transparent 75%, transparent);
+}
+.p0 {
+    background-color: rgb(255, 204, 153);
+}
+.p1 {
+    background-color: rgb(204, 204, 255);
+}
+.p2 {
+    background-color: rgb(255, 102, 102);
+}
+.p3 {
+    background-color: rgb(139, 230, 2);
+}
+.grey {
+    background-color: grey;
+}
+.purple {
+    background-color: purple;
+}
+.red {
+    background-color: red;
+}
+.blue {
+    background-color: blue;
+}
+.green {
+    background-color: green;
+}
+.orange {
+    background-color: orange;
+}
+.yellow {
+    background-color: yellow;
+}
