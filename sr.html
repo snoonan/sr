@@ -10,30 +10,35 @@
             <tr>
                 <th >Name</td>
                 <th >Shares</td>
+                <th >Stations</td>
                 <th >Money</td>
                 <th >Peer</td>
             </tr>
             <tr class="p0" id='p0'>
                 <td ><input id="p0_name" placeholder="Name" onchange="update_name(0)"></td>
                 <td id="p0_shares"></td>
+                <td id="p0_stations"></td>
                 <td id="p0_money"></td>
                 <td id="p0_peer"></td>
             </tr>
             <tr class="p1" id='p1'>
                 <td ><input id="p1_name" placeholder="Name" onchange="update_name(1)"></td>
                 <td id="p1_shares"></td>
+                <td id="p1_stations"></td>
                 <td id="p1_money"></td>
                 <td id="p1_peer"></td>
             </tr>
             <tr class="p2" id='p2'>
                 <td ><input id="p2_name" placeholder="Name" onchange="update_name(2)"></td>
                 <td id="p2_shares"></td>
+                <td id="p2_stations"></td>
                 <td id="p2_money"></td>
                 <td id="p2_peer"></td>
             </tr>
             <tr class="p3" id='p3'>
                 <td ><input id="p3_name" placeholder="Name" onchange="update_name(3)"></td>
                 <td id="p3_shares"></td>
+                <td id="p3_stations"></td>
                 <td id="p3_money"></td>
                 <td id="p3_peer"></td>
              </tr>
@@ -41,7 +46,7 @@
         <button  id='start' onclick="start()">Start game</button>
         <button  id='restart' onclick="restart()" hidden >Another game</button>
 <table id=companies border=1>
-<tr><th>Company<th>Outstanding shares<th>Share holders</tr>
+<tr><th>Company<th>Outstanding shares<th>Share holders<th>Station owners<th>Touching</tr>
 </table>
 <div id='turn' >Active player: <span id=active_player></span><span id="action"></span><button id-'pass' onclick="end_action()">Pass</button></div>
 <div id='auction' hidden >Veto for <span id='bid_co'></span><div></div>

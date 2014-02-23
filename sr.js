@@ -97,15 +97,15 @@ function next_player() {
     game.player_idx = game.player_order[p];
     next_turn();
 }
-function take_share(c, overdraft) {
+function take_share(p, c, overdraft) {
    if (game.companies[c].shares <= 0 && !overdraft) {
       return;
    }
    game.companies[c].shares -= 1;
-   game.companies[c].holders[game.player_idx] += 1;
-   game.players[game.player_idx].shares[c] += 1;
+   game.companies[c].holders[p] += 1;
+   game.players[p].shares[c] += 1;
    update_c_stock_ui(game.companies[c]);
-   update_p_stock_ui(game.players[game.player_idx]);
+   update_p_stock_ui(game.players[p]);
 }
 function pay_share(c, p) {
    if (game.companies[c].shares == 0) {
@@ -121,23 +121,36 @@ function move_head(name, x,y) {
    game.companies[name].train = [x,y];
    $('#'+x+'_'+y+" .middle").append($('#'+name+'_train'));
 }
+function own_track(loc, name) {
+   game.companies[name].track.push(loc[0]+'_'+loc[1]);
+   game.loc[loc[0]+'_'+loc[1]] = ['r',name];
+   $('#'+loc[0]+'_'+loc[1]+' .middle .track').remove()
+   $('#'+loc[0]+'_'+loc[1]+" .middle").append($('<span/>', {"class":game.companies[name].color+' track', html:"&nbsp;"}));
+}
 function final_move_head(name) {
    game.companies[name].last = game.companies[name].from
+   own_track(game.companies[name].last, name);
    game.companies[name].from = game.companies[name].train
-   var loc = game.companies[name].train;
-   game.loc[loc[0]+'_'+loc[1]] = ['t',name];
-   $('#'+loc[0]+'_'+loc[1]+'>.middle').addClass(name);
+   loc = game.companies[name].train;
+   game.loc[loc[0]+'_'+loc[1]] = ['T',name];
    game.valid = [];
    show_valid();
+}
+function place_station(loc, p) {
+   if(game.players[p].stations == 0) {
+      return false;
+   }
+   game.players[p].stations -= 1;
+   game.loc[loc[0]+'_'+loc[1]] = ['s', p];
+   $('#'+loc[0]+'_'+loc[1]+" .middle").append($('<span/>', {"class":'p'+p+' station', html:"S"}));
+   update_p_station_ui(game.players[game.player_idx]);
+   return true;
 }
 function place_train(name, x, y, veto_allowed) {
    game.moving = name;
    game.bid = 0;
    game.veto_winner = game.player_idx;
-   take_share(name, false)
-   // Mark trail
-   var loc = game.companies[name].from;
-   $('#'+loc[0]+'_'+loc[1]+" .middle").append($('<span/>', {"class":game.companies[name].color, html:"&nbsp;"}));
+   take_share(game.player_idx, name, false)
 
    move_head(name, x, y);
    if (veto_allowed) {
@@ -192,18 +205,75 @@ function bid() {
 function bid_pass() {
    veto_next();
 }
+function pay_town() {
+   // Count stations, pays out 1/touch to first and .5/touch to second. Ties share
+   var most = 0;
+   var most_p = [];
+   var next = 0;
+   var next_p = [];
+   for (var p = 0; p < game.max_player; p++) {
+      if (game.companies[game.moving].stations[p] > most) {
+         next = most;
+         next_p = most_p;
+         most = game.companies[game.moving].stations[p];
+         most_p = [];
+         // Fall thru into next if.
+      }
+      if (game.companies[game.moving].stations[p] == most) {
+         most_p.push(p);
+         continue;
+      }
+      if (game.companies[game.moving].stations[p] > next) {
+         next = game.companies[game.moving].stations[p];
+         next_p = [];
+         // Fall thru into next if.
+      }
+      if (game.companies[game.moving].stations[p] == next) {
+         next_p.push(p);
+         continue;
+      }
+   }
+   if (most == 0) {
+      return;
+   }
+   if (most_p.length == 1) {
+      game.players[most_p[0]].money += game.companies[game.moving].touches.length;
+      update_p_money_ui(game.players[most_p[0]]);
+   } else if (most_p.length > 0) {
+      next_p = []; // Tie for first means no second.
+      var total = Math.floor(game.companies[game.moving].touches.length * 1.5);
+      for( var p in most_p) {
+         game.players[p].money += Math.floor(total/most_p.length);
+         update_p_money_ui(game.players[p]);
+      }
+   }
+   if (next == 0) {
+      return;
+   }
+   if (next_p.length == 1) {
+      game.players[next_p[0]].money += Math.floor(game.companies[game.moving].touches.length*0.5);
+      update_p_money_ui(game.players[next_p[0]]);
+   } else if (next_p.length > 0) {
+      var total = Math.floor(game.companies[game.moving].touches.length * 0.5);
+      for( var p in next_p) {
+         game.players[p].money += Math.floor(total/next_p.length);
+         update_p_money_ui(game.players[p]);
+      }
+   }
+}
+function pay_city() {
+}
 function veto_done(name) {
    var loc = game.companies[name].train;
    $('#auction').hide();
 
-   game.moving = undefined;
+   var at_loc = game.loc[loc[0]+'_'+loc[1]];
    game.moved = name;
    final_move_head(name);
    while(game.bid) {
       game.bid -= 1;
       pay_share(name, game.veto_winner);
    }
-   var at_loc = game.loc[loc[0]+'_'+loc[1]];
    if (at_loc && at_loc[0] == 's') {
       //Touched a station, remember it, and maybe give a passanger.
       var owner = +at_loc[1];
@@ -214,39 +284,69 @@ function veto_done(name) {
             game.passengers -= 1;
          }
       }
+      update_c_station_ui(game.companies[game.moving]);
    }
-   // check touches
+   // Touched something
+   if (game.move_target[3] != undefined) {
+      var loc = game.move_target[3];
+      var loc_str = loc[0]+'_'+loc[1];
+      var at_loc = game.loc[loc[0]+'_'+loc[1]];
+
+      if (game.companies[game.moving].touches.indexOf(loc_str) == -1) {
+         game.companies[game.moving].touches.push(loc_str);
+         update_c_touches_ui(game.companies[game.moving]);
+         if (at_loc[0] == 't') {
+            pay_town();
+         }
+         if (at_loc[0] == 'c') {
+            pay_city();
+         }
+      }
+   }
+
+   // Merging
+   if (game.move_target[2] != undefined) {
+      // Merge happened to [2]
+      game.companies[game.moving].track.forEach(function(t) {
+         own_track(t.split('_'), game.move_target[2]);
+      });
+      for(var p = 0; p < game.companies[game.moving].holders.length; p++)
+      {
+         for(var i = game.players[p].shares[game.moving]; i >= 2; i-=2) {
+            take_share(p, game.move_target[2], true);
+         }
+         game.players[p].shares[game.moving] = 0;
+         update_p_stock_ui(game.players[p]);
+      };
+      game.companies[game.moving].holders = [];
+      game.companies[game.moving].shares = 0;
+      for (var p = 0; p < game.max_player; p++) {
+         game.companies[game.move_target[2]].stations[p] += game.companies[game.moving].stations[p];
+         game.companies[game.moving].stations[p] = 0;
+      }
+
+      game.companies[game.move_target[2]].touches = game.companies[game.move_target[2]].touches.concat(game.companies[game.moving].touches);
+      update_c_station_ui(game.companies[game.moving]);
+      update_c_touches_ui(game.companies[game.moving]);
+      update_c_station_ui(game.companies[game.move_target[2]]);
+      update_c_stock_ui(game.companies[game.moving]);
+      $('#'+game.companies[game.moving].name+'_train').remove();
+      // Replace the train with track.
+      own_track(game.companies[game.moving].train, game.move_target[2]);
+   }
+   game.moving = undefined;
    next_action();
 }
-function clickhex(h) {
-   var loc;
-   var e;
-
-   e = $(h.srcElement);
-   while (!e.hasClass('middle') && !e.hasClass('hex')) {
-      e = e.parent();
-   }
-   if (!e.hasClass('middle')) {
-      return;
-   }
-   if (e.attr('land') == ' ') {
-      return;
-   }
-   loc = e.parent().attr('id').split('_');
-   var did_something = false;
-   var x = +loc[0];
-   var y = +loc[1];
-   game.co_list.forEach(function (c_nam) {
+function click_train(x,y,c_nam) {
       var c = game.companies[c_nam];
       if (c.train[0] != x || c.train[1] != y) {
-         return;
+         return false;
       }
       if (game.moved == c_nam) {
          // Only move a train once per turn.
-         return;
+         return false;
       }
       game.moving = c_nam;
-      did_something = true;
       // Get list of possible moves.
       var move_to;
       if (c.train[0] - c.last[0] == -1 && c.train[1] - c.last[1] == -1) {
@@ -288,13 +388,20 @@ function clickhex(h) {
       game.valid = [];
       empty.forEach(function(l) {
          var merge = undefined;
+         var touch = undefined;
          var x = l[0];
          var y = l[1];
          [[x-1,y-1], [x-1,y], [x,y-1],
          [x,y+1], [x+1,y], [x+1,y+1]].forEach(function (test) {
             // Check for merge and multiple merge (multi not valid)
             var loc = game.loc[test[0]+'_'+test[1]];
+            if (loc && loc[0] == 'c') {
+               touch = test;
+            }
             if (loc && loc[0] == 't') {
+               touch = test;
+            }
+            if (loc && (loc[0] == 'r' || loc[0] == 'T')) {
                if (c.name == loc[1]) {
                   return;
                }
@@ -308,10 +415,32 @@ function clickhex(h) {
          if (merge == 'xxx') {
             return;
          }
-         game.valid.push([x,y,merge]);
+         game.valid.push([x,y,merge, touch]);
       });
       show_valid();
+      return true;
+}
+function clickhex(h) {
+   var loc;
+   var e;
+
+   e = $(h.srcElement);
+   while (!e.hasClass('middle') && !e.hasClass('hex')) {
+      e = e.parent();
+   }
+   if (!e.hasClass('middle')) {
       return;
+   }
+   if (e.attr('land') == ' ') {
+      return;
+   }
+   loc = e.parent().attr('id').split('_');
+   var did_something = false;
+   var x = +loc[0];
+   var y = +loc[1];
+   var cell = game.loc[x+'_'+y];
+   game.co_list.forEach(function (c_nam) {
+      did_something |= click_train(x,y,c_nam);
    });
 
    if (did_something) {
@@ -319,6 +448,7 @@ function clickhex(h) {
    }
    game.valid.forEach(function (l) {
       if (x == l[0] && y == l[1]) {
+         game.move_target = l;
          place_train(game.moving, x, y, game.valid.length != 1);
          did_something = true;
          return;
@@ -342,43 +472,21 @@ function clickhex(h) {
        var x = l[0];
        var y = l[1];
        var loc = game.loc[x+'_'+y];
+       if (loc == undefined) {
+          return;
+       }
        if (loc[0] == 'T') {
           train = loc[1];
        }
        if (loc[0] == 's') {
           station = loc[1]
        }
-    });
-    var cost;
-    cost = {'p':2, 'h':3, 'm':4}[e.attr('land')];
-    var city = e.attr('city');
-    if (city == 'B') {
-       x = game.berlin[0];
-       y = game.berlin[1];
-       city = 3;
-    }
-    else if (city != ' ') {
-       if (game.city[x+'_'+y]) {
-          game.city[x+'_'+y].forEach(function (c)  {
-             if(!game.companies[game.placing_co].touched[c]) {
-                game.merge = true;
-             }
-             touch(c, game.placing_co);
-             touch(game.placing_co, c);
-          });
-       } else {
-          game.city[x+'_'+y] = [];
-       }
-       game.city[x+'_'+y].push(game.placing_co);
-       add_income(game.placing_co, +city);
-    }
-    place_cube(game.placing_co, x, y);
-    update_c_money(game.placing_co, -cost);
-    game.placing_cubes -= 1;
-    if (game.placing_cubes == 0) {
-       // Last cube
-       end_action();
-    }
+   });
+   if (cell[0] == undefined && !((train != undefined)|| (station != undefined))) {
+      if (place_station([x,y], game.player_idx)) {
+        next_action();
+      }
+   }
 }
 
 function start()
@@ -412,7 +520,7 @@ function start()
             cell.append($("<span/>", { text:c.charAt(1)/*, style:"position:relative; z-index:2"*/}));
          }
          if (c.charAt(0) != " ") {
-            game.loc[x+'_'+y] = [];
+            game.loc[x+'_'+y] = [c.charAt(1) != ' '?c.charAt(1):undefined];
          }
          wrapper.append(cell);
          cell = $("<div>",{"class":"bottom", land:c.charAt(0), city:c.charAt(1)});
@@ -433,6 +541,7 @@ function start()
     for(var i=0; i < 4; i++) {
         game.players[i].shares = [];
         game.players[i].tokens = [];
+        game.players[i].money = 0;
         var ap = document.getElementById("p"+i+"_name");
         if (ap.value == '') {
             var ap = document.getElementById("p"+i);
@@ -445,6 +554,7 @@ function start()
             game.player_order.push(i);
             game.max_player++;
         }
+       update_p_station_ui(game.players[i]);
     }
     game.player_order.shuffle()
 
@@ -474,6 +584,8 @@ function start()
                      'color':color,
                      'holders':[],
                      'stations':[],
+                     'track':[],
+                     'touches':[],
                      };
       game.companies[name] = company;
       game.co_list.push(name);
@@ -485,15 +597,20 @@ function start()
       row.append(cell);
       cell = $("<td/>", {id:name+'_holders'});
       row.append(cell);
+      cell = $("<td/>", {id:name+'_stations'});
+      row.append(cell);
+      cell = $("<td/>", {id:name+'_touches'});
+      row.append(cell);
 
       table.append(row);
       // Place markers.
       x=loc[0];
       y=loc[1];
-      $('#'+x+'_'+y+" .middle").append($('<span/>', {"id":company.name+"_train", "class":company.color+'  train', html:"&nbsp;"}));
+      $('#'+x+'_'+y+" .middle").append($('<span/>', {"id":company.name+"_train", "class":company.color+'  train', html:"&nbsp;&nbsp;"}));
       move_head(name, loc[0], loc[1]);
-      // Twice to fill the train->from->last pipeline.
-      final_move_head(name);
+      // Fill the train->from->last pipeline.
+      game.companies[name].from = game.companies[name].train;
+      game.companies[name].last = game.companies[name].train;
       final_move_head(name);
    });
 
@@ -530,6 +647,16 @@ function update_p_stock_ui(p)
     h.append(l);
   }
 }
+function update_p_station_ui(p)
+{
+  var h = $('#p'+p.idx+'_stations');
+  h.html(p.stations);
+}
+function update_p_money_ui(p)
+{
+  var h = $('#p'+p.idx+'_money');
+  h.html(p.money);
+}
 function update_c_stock_ui(c)
 {
   var h = $('#'+c.name+'_holders');
@@ -543,6 +670,25 @@ function update_c_stock_ui(c)
   }
   h = $('#'+c.name+'_shares');
   h.html(c.shares);
+}
+function update_c_station_ui(c)
+{
+  var h = $('#'+c.name+'_stations');
+
+  h.empty();
+  for(var p in c.stations) {
+    var l;
+    if (! (c.stations[p] > 0)) { continue; }
+    l = $('<div/>', {html: game.players[p].name+': '+c.stations[p]});
+    h.append(l);
+  }
+  h = $('#'+c.name+'_shares');
+  h.html(c.shares);
+}
+function update_c_touches_ui(c)
+{
+  h = $('#'+c.name+'_touches');
+  h.html(c.touches.length);
 }
 function show_valid()
 {
