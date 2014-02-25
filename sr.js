@@ -1,6 +1,14 @@
+// TODO:
+//   cities/goods
+//   isolated trains (user)
+//   one train with shares == end
+
+
+
 var game_cfg = {
    "start_money": [-1,0,0,40,30,24],
    "stations": 7,
+   "passengers": 9,
    "track": 60,
    "shares": 16,
    "companies": [
@@ -13,9 +21,9 @@ var game_cfg = {
       ["yellow",[9,15], 'yellow']
    ],
    "goods": [
-      [[6,2],  ['g','g','t'], 'pink'],
-      [[10,3], ['g','g','b'], 'grey'],
-      [[15,3], ['t','t','b'], 'white'],
+      [[7,2],  ['g','g','t'], 'pink'],
+      [[11,3], ['g','g','b'], 'grey'],
+      [[16,3], ['t','t','b'], 'white'],
       [[6,6],  ['b','b','g'], 'beige'],
       [[17,6], ['g','g','s'], 'cornflower'],
       [[11,7], ['s','s','b'], 'green'],
@@ -24,7 +32,7 @@ var game_cfg = {
       [[5,10], ['s','s','g'], 'palepurple'],
       [[8,10], ['b','b','t'], 'mauve'],
       [[11,11],['t','t','g'], 'brown'],
-      [[12,12],['b','b','s'], 'mint']
+      [[13,12],['b','b','s'], 'mint']
    ],
    "map": [
 "  p p p pt    p p p p p p p p pt",
@@ -110,15 +118,15 @@ function take_share(p, c, overdraft) {
    update_c_stock_ui(game.companies[c]);
    update_p_stock_ui(game.players[p]);
 }
-function get_share(c, p) {
+function return_share(c, p) {
    if (game.companies[c].shares == 0) {
       return;
    }
-   game.companies[c].shares -= 1;
+   game.companies[c].shares += 1;
    game.companies[c].holders[p] -= 1;
-   game.players[p].shares[c] += 1;
+   game.players[p].shares[c] -= 1;
    update_c_stock_ui(game.companies[c]);
-   update_p_stock_ui(game.players[game.player_idx]);
+   update_p_stock_ui(game.players[p]);
 }
 function move_head(name, x,y) {
    game.companies[name].train = [x,y];
@@ -169,6 +177,7 @@ function place_train(name, x, y, veto_allowed) {
    game.bid = 0;
    game.veto_winner = game.player_idx;
    take_share(game.player_idx, name, false)
+   update_message('Moving '+name, true);
 
    move_head(name, x, y);
    if (veto_allowed) {
@@ -258,12 +267,14 @@ function pay_town(c,count) {
    if (most_p.length == 1) {
       game.players[most_p[0]].money += game.companies[c].touches.length;
       update_p_money_ui(game.players[most_p[0]]);
+      update_message('Pay '+game.players[most_p[0]].name+' $'+game.companies[c].touches.length,false);
    } else if (most_p.length > 0) {
       next_p = []; // Tie for first means no second.
       var total = game.companies[c].touches.length * 1.5;
       for( var p in most_p) {
          game.players[p].money += Math.floor(total/most_p.length);
          update_p_money_ui(game.players[p]);
+         update_message('Pay '+game.players[p].name+' $'+Math.floor(total/next_p.length),false);
       }
    }
    if (next == 0) {
@@ -272,11 +283,13 @@ function pay_town(c,count) {
    if (next_p.length == 1) {
       game.players[next_p[0]].money += Math.floor(game.companies[c].touches.length*0.5);
       update_p_money_ui(game.players[next_p[0]]);
+      update_message('Pay '+game.players[next_p[0]].name+' $'+Math.floor(game.companies[c].touches.length*0.5),false);
    } else if (next_p.length > 0) {
       var total = game.companies[c].touches.length * 0.5;
       for( var p in next_p) {
          game.players[p].money += Math.floor(total/next_p.length);
          update_p_money_ui(game.players[p]);
+         update_message('Pay '+game.players[p].name+' $'+Math.floor(total/next_p.length),false);
       }
    }
 }
@@ -289,9 +302,12 @@ function veto_done(name) {
    var at_loc = game.loc[loc[0]+'_'+loc[1]];
    game.moved = name;
    final_move_head(name);
+   if (game.bid) {
+      update_message(game.players[game.veto_winner].name+' paying '+game.bid+' shares', false);
+   }
    while(game.bid) {
       game.bid -= 1;
-      get_share(name, game.veto_winner);
+      return_share(name, game.veto_winner);
    }
    if (at_loc && at_loc[0] == 's') {
       //Touched a station, remember it, and maybe give a passanger.
@@ -333,12 +349,14 @@ function veto_done(name) {
    // Merging
    if (game.move_target[2] != undefined) {
       // Merge happened to [2]
+      update_message('Merging '+game.companies[game.moving].name+' into '+game.companies[game.move_target[2]].name,false);
       pay_town(game.moving, 'holders');
       game.companies[game.moving].track.forEach(function(t) {
          own_track(t.split('_'), game.move_target[2]);
       });
       for(var p = 0; p < game.companies[game.moving].holders.length; p++)
       {
+         update_message(game.players[p].name+' trading '+game.players[p].shares[game.moving]+' for '+Math.floor(game.players[p].shares[game.moving]/2)+' of '+game.move_target[2].name);
          for(var i = game.players[p].shares[game.moving]; i >= 2; i-=2) {
             take_share(p, game.move_target[2], true);
          }
@@ -459,7 +477,15 @@ function clickhex(h) {
    var loc;
    var e;
 
+   if (game.end) {
+      return;
+   }
    e = $(h.srcElement);
+   if (e.hasClass('goods')) {
+      // take good.
+      next_action();
+      return;
+   }
    while (!e.hasClass('middle') && !e.hasClass('hex')) {
       e = e.parent();
    }
@@ -532,6 +558,7 @@ function start()
    var x,y;
    var start_col;
 
+   $('#start').hide();
    x = 0; y = 0;
    start_col = 0;
    game.loc = {};
@@ -554,7 +581,7 @@ function start()
          wrapper.append(cell);
          cell = $("<div>",{"class":"middle", land:c.charAt(0), city:c.charAt(1)});
          if (c.charAt(1) != " ") {
-            cell.append($("<span/>", { text:c.charAt(1)/*, style:"position:relative; z-index:2"*/}));
+            cell.append($("<span/>"));
          }
          if (c.charAt(0) != " ") {
             game.loc[x+'_'+y] = [c.charAt(1) != ' '?c.charAt(1):undefined];
@@ -604,6 +631,16 @@ function start()
         after=prow;
     }
 
+   game_cfg.goods.forEach(function (l) {
+      var loc = l[0];
+      var goods = l[1];
+      var color = l[2];
+
+      var row = $('#'+loc[0]+'_'+loc[1]+' .middle');
+      for(var i = 0; i < 3; i++) {
+         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods '+goods[i], style:'background:'+color+';'}));
+      }
+   });
    table = $('#companies');
    game.companies = {};
    game.co_list = [];
@@ -677,6 +714,15 @@ function end() {
       pay_town(c, 'stations');
       pay_town(c, 'holders');
    }
+   $('#restart').show();
+}
+
+function update_message(m, clear)
+{
+   if (clear) {
+      $('#message').empty();
+   }
+   $('#message').append($('<div/>',{text:m}));
 }
 
 function update_name(p)

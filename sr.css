@@ -32,6 +32,9 @@
 .hex .top[land="p"] {
     border-bottom: 14px solid #6C6;
 }
+.hex .top[city="c"] {
+    border-bottom: 14px solid #662;
+}
 .hex .top[city="t"] {
     border-bottom: 14px solid #88f;
 }
@@ -39,12 +42,18 @@
 .hex .middle[land="p"] {
     background-color: #6c6;
 }
+.hex .middle[city="c"] {
+    background-color: #662;
+}
 .hex .middle[city="t"] {
     background-color: #88f;
 }
 
 .hex .bottom[land="p"] {
     border-top: 14px solid #6c6;
+}
+.hex .bottom[city="c"] {
+    border-top: 14px solid #662;
 }
 .hex .bottom[city="t"] {
     border-top: 14px solid #88f;
