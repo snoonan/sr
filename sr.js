@@ -1,7 +1,5 @@
 // TODO:
-//   cities/goods
-//   isolated trains (user)
-//   one train with shares == end
+//  remove unconnect goods
 
 
 
@@ -25,14 +23,14 @@ var game_cfg = {
       [[11,3], ['g','g','b'], 'grey'],
       [[16,3], ['t','t','b'], 'white'],
       [[6,6],  ['b','b','g'], 'beige'],
-      [[17,6], ['g','g','s'], 'cornflower'],
+      [[17,6], ['g','g','s'], 'olive'],
       [[11,7], ['s','s','b'], 'green'],
       [[6,8],  ['s','s','t'], 'yellow'],
-      [[15,8], ['t','t','s'], 'paleblue'],
-      [[5,10], ['s','s','g'], 'palepurple'],
-      [[8,10], ['b','b','t'], 'mauve'],
+      [[15,8], ['t','t','s'], 'tan'],
+      [[5,10], ['s','s','g'], 'lime'],
+      [[8,10], ['b','b','t'], 'magenta'],
       [[11,11],['t','t','g'], 'brown'],
-      [[13,12],['b','b','s'], 'mint']
+      [[13,12],['b','b','s'], 'teal']
    ],
    "map": [
 "  p p p pt    p p p p p p p p pt",
@@ -173,13 +171,17 @@ function place_station(loc, p) {
    return true;
 }
 function place_train(name, x, y, veto_allowed) {
+   move_head(name, x, y);
+   if (game.veto) {
+      // in the veto process just wait for bid to get set.
+      return;
+   }
    game.moving = name;
    game.bid = 0;
    game.veto_winner = game.player_idx;
    take_share(game.player_idx, name, false)
    update_message('Moving '+name, true);
 
-   move_head(name, x, y);
    if (veto_allowed) {
       game.veto = game.player_idx;
       game.bid = 0;
@@ -269,12 +271,12 @@ function pay_town(c,count) {
       update_p_money_ui(game.players[most_p[0]]);
       update_message('Pay '+game.players[most_p[0]].name+' $'+game.companies[c].touches.length,false);
    } else if (most_p.length > 0) {
-      next_p = []; // Tie for first means no second.
+      next = 0; // Tie for first means no second.
       var total = game.companies[c].touches.length * 1.5;
       for( var p in most_p) {
          game.players[p].money += Math.floor(total/most_p.length);
          update_p_money_ui(game.players[p]);
-         update_message('Pay '+game.players[p].name+' $'+Math.floor(total/next_p.length),false);
+         update_message('Pay '+game.players[p].name+' $'+Math.floor(total/most_p.length),false);
       }
    }
    if (next == 0) {
@@ -293,7 +295,67 @@ function pay_town(c,count) {
       }
    }
 }
-function pay_city() {
+function pay_city(t, count, price) {
+   // Count tokens, pays out 2(6) to first and 1(3) to second. Ties share
+   var most = 0;
+   var most_p = [];
+   var next = 0;
+   var next_p = [];
+   for (var p = 0; p < game.max_player; p++) {
+      var val = game.players[p][count][t];
+      if (val && count == 'tokens') {
+         val = val.length;
+      }
+      if (val > most) {
+         next = most;
+         next_p = most_p;
+         most = val;
+         most_p = [];
+         // Fall thru into next if.
+      }
+      if (val == most) {
+         most_p.push(p);
+         continue;
+      }
+      if (val > next) {
+         next = val;
+         next_p = [];
+         // Fall thru into next if.
+      }
+      if (val == next) {
+         next_p.push(p);
+         continue;
+      }
+   }
+   if (most == 0) {
+      return;
+   }
+   if (most_p.length == 1) {
+      game.players[most_p[0]].money += price
+      update_p_money_ui(game.players[most_p[0]]);
+      update_message('Pay '+game.players[most_p[0]].name+' $'+price,false);
+   } else if (most_p.length > 0) {
+      next = 0; // Tie for first means no second.
+      for( var p in most_p) {
+         game.players[p].money += Math.floor((price*1.5)/most_p.length);
+         update_p_money_ui(game.players[p]);
+         update_message('Pay '+game.players[p].name+' $'+Math.floor((price*1.5)/most_p.length),false);
+      }
+   }
+   if (next == 0) {
+      return;
+   }
+   if (next_p.length == 1) {
+      game.players[next_p[0]].money += price*0.5
+      update_p_money_ui(game.players[next_p[0]]);
+      update_message('Pay '+game.players[next_p[0]].name+' $'+Math.floor(price*0.5),false);
+   } else if (next_p.length > 0) {
+      for( var p in next_p) {
+         game.players[p].money += Math.floor(price*0.5/next_p.length);
+         update_p_money_ui(game.players[p]);
+         update_message('Pay '+game.players[p].name+' $'+Math.floor(price*0.5/next_p.length),false);
+      }
+   }
 }
 function veto_done(name) {
    var loc = game.companies[name].train;
@@ -315,8 +377,9 @@ function veto_done(name) {
       game.companies[name].stations[owner] += 1;
       if (owner != game.veto_winner && game.veto_winner == game.player_idx) { // If it is not my station AND I decided to go here.
          if (game.passengers > 0) {
-            game.players.tokens['p'] += 1;
+            game.players[game.player_idx].goods['p'] = (game.players[game.player_idx].goods['p'] || 0) + 1;
             game.passengers -= 1;
+            update_p_token_ui(game.players[game.player_idx]);
          }
       }
       update_c_station_ui(game.companies[game.moving]);
@@ -341,7 +404,7 @@ function veto_done(name) {
             pay_town(game.moving, 'stations');
          }
          if (at_loc[0] == 'c') {
-            pay_city();
+            pay_city(at_loc[1], 'tokens', 2);
          }
       });
    }
@@ -356,7 +419,7 @@ function veto_done(name) {
       });
       for(var p = 0; p < game.companies[game.moving].holders.length; p++)
       {
-         update_message(game.players[p].name+' trading '+game.players[p].shares[game.moving]+' for '+Math.floor(game.players[p].shares[game.moving]/2)+' of '+game.move_target[2].name);
+         update_message(game.players[p].name+' trading '+game.players[p].shares[game.moving]+' for '+Math.floor(game.players[p].shares[game.moving]/2)+' of '+game.companies[game.move_target[2]].name);
          for(var i = game.players[p].shares[game.moving]; i >= 2; i-=2) {
             take_share(p, game.move_target[2], true);
          }
@@ -364,7 +427,6 @@ function veto_done(name) {
          update_p_stock_ui(game.players[p]);
       };
       game.companies[game.moving].holders = [];
-      game.companies[game.moving].shares = 0;
       for (var p = 0; p < game.max_player; p++) {
          game.companies[game.move_target[2]].stations[p] += game.companies[game.moving].stations[p];
          game.companies[game.moving].stations[p] = 0;
@@ -373,6 +435,7 @@ function veto_done(name) {
       game.companies[game.move_target[2]].touches = game.companies[game.move_target[2]].touches.concat(game.companies[game.moving].touches);
       update_c_station_ui(game.companies[game.moving]);
       update_c_touches_ui(game.companies[game.moving]);
+      isolate(game.moving);
       update_c_stock_ui(game.companies[game.moving]);
       update_c_station_ui(game.companies[game.move_target[2]]);
       update_c_touches_ui(game.companies[game.move_target[2]]);
@@ -380,8 +443,36 @@ function veto_done(name) {
       // Replace the train with track.
       own_track(game.companies[game.moving].train, game.move_target[2]);
    }
+   var co_count = 0;
+   for (var c in game.companies) {
+      if (!game.companies.hasOwnProperty(c)) {
+         continue;
+      }
+      if (game.companies[c].shares > 0) {
+         co_count += 1;
+      }
+   }
+   if (co_count == 1) {
+      game.end = true;
+   }
    game.moving = undefined;
    next_action();
+}
+function isolate(name) {
+      var co_count = 0;
+      game.companies[name].shares = 0;
+      update_c_stock_ui(game.companies[name]);
+      for (var c in game.companies) {
+         if (!game.companies.hasOwnProperty(c)) {
+            continue;
+         }
+         if (game.companies[c].shares > 0) {
+            co_count += 1;
+         }
+      }
+      if (co_count == 1) {
+         game.end = true;
+      }
 }
 function click_train(x,y,c_nam) {
       var c = game.companies[c_nam];
@@ -464,7 +555,7 @@ function click_train(x,y,c_nam) {
                }
                merge = loc[1];
             }
-         });;
+         });
          if (merge == 'xxx') {
             return;
          }
@@ -483,6 +574,16 @@ function clickhex(h) {
    e = $(h.srcElement);
    if (e.hasClass('goods')) {
       // take good.
+      if (game.players[game.player_idx].tokens[e.attr('town')] == undefined) {
+         game.players[game.player_idx].tokens[e.attr('town')] = '';
+      }
+      if (game.players[game.player_idx].goods[e.attr('good')] == undefined) {
+         game.players[game.player_idx].goods[e.attr('good')] = 0;
+      }
+      game.players[game.player_idx].tokens[e.attr('town')] += e.attr('good')
+      game.players[game.player_idx].goods[e.attr('good')] += 1; 
+      update_p_token_ui(game.players[game.player_idx]);
+      e.remove();
       next_action();
       return;
    }
@@ -565,6 +666,7 @@ function start()
    game.valid = [];
    show_valid();
    game.track = game_cfg.track;
+   game.passengers = game_cfg.passengers;
    game_cfg.map.forEach(function (l) {
       var col = $("<div>", { "class":"hex-row"});
       map.append(col);
@@ -605,6 +707,7 @@ function start()
     for(var i=0; i < 4; i++) {
         game.players[i].shares = [];
         game.players[i].tokens = [];
+        game.players[i].goods = [];
         game.players[i].money = 0;
         var ap = document.getElementById("p"+i+"_name");
         if (ap.value == '') {
@@ -637,11 +740,14 @@ function start()
       var color = l[2];
 
       var row = $('#'+loc[0]+'_'+loc[1]+' .middle');
+         row.append($("<span/>", {html:'&nbsp;', style:'background:'+color+';'}));
       for(var i = 0; i < 3; i++) {
-         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods '+goods[i], style:'background:'+color+';'}));
+         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods', 'town':color, 'good':goods[i], style:'background:'+color+';'}));
       }
+      game.loc[loc[0]+'_'+loc[1]] = ['c',color];
    });
    table = $('#companies');
+   table.show();
    game.companies = {};
    game.co_list = [];
    game.city = {}
@@ -675,6 +781,8 @@ function start()
       row.append(cell);
       cell = $("<td/>", {id:name+'_touches', html:'1'});
       row.append(cell);
+      cell = $("<td/>", {html:"<input id='"+name+"_isolated' type='checkbox' onclick='isolate(\""+name+"\");'/>"});
+      row.append(cell);
 
       table.append(row);
       // Place markers.
@@ -707,12 +815,21 @@ function start()
 function end() {
    // Per good, pay 6/3
    // Per remaining company pay 1/tc for stations and stock
+   update_message("Game over",false);
    for (var c in game.companies) {
       if (!game.companies.hasOwnProperty(c)) {
          continue;
       }
+      update_message(c.name,false);
+      update_message("Pay stations",false);
       pay_town(c, 'stations');
+      update_message("Pay stock",false);
       pay_town(c, 'holders');
+   }
+   for (var g in "pbtsg") {
+      update_message("Goods: "+g,false);
+      update_message("Pay goods",false);
+      pay_city(g, 'goods', 6);
    }
    $('#restart').show();
 }
@@ -751,6 +868,28 @@ function update_p_money_ui(p)
 {
   var h = $('#p'+p.idx+'_money');
   h.html(p.money);
+}
+function update_p_token_ui(p)
+{
+  var h = $('#p'+p.idx+'_goods');
+  h.empty();
+  var c;
+  c = $('<div/>')
+  for (var good in p.goods) {
+   if (!p.goods.hasOwnProperty(good)) {
+      continue;
+   }
+   c.append($("<span/>", {html: good+': '+p.goods[good]+' '}));
+  }
+  h.append(c);
+  c = $('<div/>')
+  for (var loc in p.tokens) {
+   if (!p.tokens.hasOwnProperty(loc)) {
+      continue;
+   }
+   c.append($("<span/>", {style:'background: '+loc,html: p.tokens[loc]+' '}));
+  }
+  h.append(c);
 }
 function update_c_stock_ui(c)
 {
