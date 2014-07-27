@@ -50,6 +50,20 @@
         </table>
         <button  id='start' onclick="start()">Start game</button>
         <button  id='restart' onclick="restart()" hidden >Another game</button>
+        <button id='rules' onClick='alert("\n\
+   most gets value, second gets half\n\
+   score touch town     2  most tokens\n\
+   score touch city     1/tc   most stations\n\
+   score touch railroad 1/tc   most shares     2/1 share conversion toucher -&gt; touched\n\
+\n\
+   end discard tokens for unconnected towns/\n\
+\n\
+   per token type       6\n\
+\n\
+   per remaining train\n\
+   stations             1/tc most linked\n\
+   shares               1/tc\n\
+        ");'>rules</button>
 <table hidden id=companies border=1>
 <tr><th>Company<th>Outstanding shares<th>Share holders<th>Station owners<th>Touching<th>Isolated</tr>
 </table>
@@ -61,4 +75,5 @@ Current high bidder: <span id='h_bidder'></span> at <span id='h_bid'></span><div
 Current bid: <span id="bidder"></span><input id='bid'/><button onclick="bid()">Bid</button><button onclick="bid_pass()">Pass</button><div></div></div>
 <div id="map" style="float: left; width: 2100;">
 </div>
+
 </body>
