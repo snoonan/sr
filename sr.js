@@ -2,6 +2,9 @@
 //  remove unconnect goods
 
 
+var game = {
+  'Players': [{},{},{},{},{}],
+}
 
 var game_cfg = {
    "start_money": [-1,0,0,40,30,24],
@@ -74,12 +77,9 @@ Array.prototype.shuffle = function() {
 
 */
 
-var game = {
-};
-
 function next_turn() {
    var ap = document.getElementById("active_player");
-   ap.innerText = game.players[game.player_idx].name;
+   ap.innerText = game.Players[game.player_idx].name;
    game.moved = undefined;
    game.valid = [];
    show_valid();
@@ -90,6 +90,7 @@ function end_action() {
 }
 function next_action() {
     if(game.end) {
+       game_cmd_send("end");
        end();
     }
     if (game.actions == 0) {
@@ -112,9 +113,9 @@ function take_share(p, c, overdraft) {
    }
    game.companies[c].shares -= 1;
    game.companies[c].holders[p] += 1;
-   game.players[p].shares[c] += 1;
+   game.Players[p].shares[c] += 1;
    update_c_stock_ui(game.companies[c]);
-   update_p_stock_ui(game.players[p]);
+   update_p_stock_ui(game.Players[p]);
 }
 function return_share(c, p) {
    if (game.companies[c].shares == 0) {
@@ -122,9 +123,9 @@ function return_share(c, p) {
    }
    game.companies[c].shares += 1;
    game.companies[c].holders[p] -= 1;
-   game.players[p].shares[c] -= 1;
+   game.Players[p].shares[c] -= 1;
    update_c_stock_ui(game.companies[c]);
-   update_p_stock_ui(game.players[p]);
+   update_p_stock_ui(game.Players[p]);
 }
 function move_head(name, x,y) {
    game.companies[name].train = [x,y];
@@ -162,13 +163,14 @@ function final_move_head(name) {
    update_message('', true);
 }
 function place_station(loc, p) {
-   if(game.players[p].stations == 0) {
+   if(game.Players[p].stations == 0) {
       return false;
    }
-   game.players[p].stations -= 1;
+   game.Players[p].stations -= 1;
    game.loc[loc[0]+'_'+loc[1]] = ['s', p];
    $('#'+loc[0]+'_'+loc[1]+" .middle").append($('<span/>', {"class":'p'+p+' station', html:"S"}));
-   update_p_station_ui(game.players[game.player_idx]);
+   update_p_station_ui(game.Players[game.player_idx]);
+   next_action();
    return true;
 }
 function place_train(name, x, y, veto_allowed) {
@@ -213,12 +215,12 @@ function veto_next() {
           // Remember this so we give the current player one last chance to veto.
           game.veto_end = game.veto;
        }
-       if (game.players[game.veto].shares[game.moving] > game.bid ||
-          (game.players[game.veto].shares[game.moving] == game.bid && game.veto == game.player_idx)) {
+       if (game.Players[game.veto].shares[game.moving] > game.bid ||
+          (game.Players[game.veto].shares[game.moving] == game.bid && game.veto == game.player_idx)) {
           $('#bid_co').html(game.companies[game.moving].name);
-          $('#bidder').html(game.players[game.veto].name);
+          $('#bidder').html(game.Players[game.veto].name);
           $('#bid').val(game.bid);
-          $('#h_bidder').html(game.players[game.veto_winner].name);
+          $('#h_bidder').html(game.Players[game.veto_winner].name);
           $('#h_bid').html(game.bid);
           return;
        }
@@ -226,7 +228,12 @@ function veto_next() {
 }
 function bid() {
    var b = $('#bid').val();
-   b = Math.min(b,game.players[game.veto].shares[game.moving]);
+   game_cmd_send("bid:"+game.player_idx+':'+b);
+   bid_cmd(b);
+}
+
+function bid_cmd(b) {
+   b = Math.min(b,game.Players[game.veto].shares[game.moving]);
    if (b > game.bid || (b == game.bid && game.veto == game.player_idx)) {
       game.veto_winner = game.veto;
       game.bid = b;
@@ -234,6 +241,7 @@ function bid() {
    veto_next();
 }
 function bid_pass() {
+   game_cmd_send("bid:"+p+":-1");
    veto_next();
 }
 function pay_town(c,count) {
@@ -268,37 +276,37 @@ function pay_town(c,count) {
       return;
    }
    if (most_p.length == 1) {
-      game.players[most_p[0]].money += game.companies[c].touches.length;
-      update_p_money_ui(game.players[most_p[0]]);
-      update_message('Pay '+game.players[most_p[0]].name+' $'+game.companies[c].touches.length,false);
+      game.Players[most_p[0]].money += game.companies[c].touches.length;
+      update_p_money_ui(game.Players[most_p[0]]);
+      update_message('Pay '+game.Players[most_p[0]].name+' $'+game.companies[c].touches.length,false);
    } else if (most_p.length > 0) {
       next = 0; // Tie for first means no second.
       var total = game.companies[c].touches.length * 1.5;
       for( var p in most_p) {
-         if (!game.players.hasOwnProperty(p)) {
+         if (!game.Players.hasOwnProperty(p)) {
             continue;
          }
-         game.players[p].money += Math.floor(total/most_p.length);
-         update_p_money_ui(game.players[p]);
-         update_message('Pay '+game.players[p].name+' $'+Math.floor(total/most_p.length),false);
+         game.Players[p].money += Math.floor(total/most_p.length);
+         update_p_money_ui(game.Players[p]);
+         update_message('Pay '+game.Players[p].name+' $'+Math.floor(total/most_p.length),false);
       }
    }
    if (next == 0) {
       return;
    }
    if (next_p.length == 1) {
-      game.players[next_p[0]].money += Math.floor(game.companies[c].touches.length*0.5);
-      update_p_money_ui(game.players[next_p[0]]);
-      update_message('Pay '+game.players[next_p[0]].name+' $'+Math.floor(game.companies[c].touches.length*0.5),false);
+      game.Players[next_p[0]].money += Math.floor(game.companies[c].touches.length*0.5);
+      update_p_money_ui(game.Players[next_p[0]]);
+      update_message('Pay '+game.Players[next_p[0]].name+' $'+Math.floor(game.companies[c].touches.length*0.5),false);
    } else if (next_p.length > 0) {
       var total = game.companies[c].touches.length * 0.5;
       for( var p in next_p) {
-         if (!game.players.hasOwnProperty(p)) {
+         if (!game.Players.hasOwnProperty(p)) {
             continue;
          }
-         game.players[p].money += Math.floor(total/next_p.length);
-         update_p_money_ui(game.players[p]);
-         update_message('Pay '+game.players[p].name+' $'+Math.floor(total/next_p.length),false);
+         game.Players[p].money += Math.floor(total/next_p.length);
+         update_p_money_ui(game.Players[p]);
+         update_message('Pay '+game.Players[p].name+' $'+Math.floor(total/next_p.length),false);
       }
    }
 }
@@ -309,7 +317,7 @@ function pay_city(t, count, price) {
    var next = 0;
    var next_p = [];
    for (var p = 0; p < game.max_player; p++) {
-      var val = game.players[p][count][t];
+      var val = game.Players[p][count][t];
       if (val && count == 'tokens') {
          val = val.length;
       }
@@ -338,35 +346,35 @@ function pay_city(t, count, price) {
       return;
    }
    if (most_p.length == 1) {
-      game.players[most_p[0]].money += price
-      update_p_money_ui(game.players[most_p[0]]);
-      update_message('Pay '+game.players[most_p[0]].name+' $'+price,false);
+      game.Players[most_p[0]].money += price
+      update_p_money_ui(game.Players[most_p[0]]);
+      update_message('Pay '+game.Players[most_p[0]].name+' $'+price,false);
    } else if (most_p.length > 0) {
       next = 0; // Tie for first means no second.
       for( var p in most_p) {
-         if (!game.players.hasOwnProperty(p)) {
+         if (!game.Players.hasOwnProperty(p)) {
             continue;
          }
-         game.players[p].money += Math.floor((price*1.5)/most_p.length);
-         update_p_money_ui(game.players[p]);
-         update_message('Pay '+game.players[p].name+' $'+Math.floor((price*1.5)/most_p.length),false);
+         game.Players[p].money += Math.floor((price*1.5)/most_p.length);
+         update_p_money_ui(game.Players[p]);
+         update_message('Pay '+game.Players[p].name+' $'+Math.floor((price*1.5)/most_p.length),false);
       }
    }
    if (next == 0) {
       return;
    }
    if (next_p.length == 1) {
-      game.players[next_p[0]].money += price*0.5
-      update_p_money_ui(game.players[next_p[0]]);
-      update_message('Pay '+game.players[next_p[0]].name+' $'+Math.floor(price*0.5),false);
+      game.Players[next_p[0]].money += price*0.5
+      update_p_money_ui(game.Players[next_p[0]]);
+      update_message('Pay '+game.Players[next_p[0]].name+' $'+Math.floor(price*0.5),false);
    } else if (next_p.length > 0) {
       for( var p in next_p) {
-         if (!game.players.hasOwnProperty(p)) {
+         if (!game.Players.hasOwnProperty(p)) {
             continue;
          }
-         game.players[p].money += Math.floor(price*0.5/next_p.length);
-         update_p_money_ui(game.players[p]);
-         update_message('Pay '+game.players[p].name+' $'+Math.floor(price*0.5/next_p.length),false);
+         game.Players[p].money += Math.floor(price*0.5/next_p.length);
+         update_p_money_ui(game.Players[p]);
+         update_message('Pay '+game.Players[p].name+' $'+Math.floor(price*0.5/next_p.length),false);
       }
    }
 }
@@ -379,7 +387,7 @@ function veto_done(name) {
    game.veto = undefined;
    final_move_head(name);
    if (game.bid) {
-      update_message(game.players[game.veto_winner].name+' paying '+game.bid+' shares', false);
+      update_message(game.Players[game.veto_winner].name+' paying '+game.bid+' shares', false);
    }
    while(game.bid) {
       game.bid -= 1;
@@ -391,9 +399,9 @@ function veto_done(name) {
       game.companies[name].stations[owner] += 1;
       if (owner != game.veto_winner && game.veto_winner == game.player_idx) { // If it is not my station AND I decided to go here.
          if (game.passengers > 0) {
-            game.players[game.player_idx].goods['p'] = (game.players[game.player_idx].goods['p'] || 0) + 1;
+            game.Players[game.player_idx].goods['p'] = (game.Players[game.player_idx].goods['p'] || 0) + 1;
             game.passengers -= 1;
-            update_p_token_ui(game.players[game.player_idx]);
+            update_p_token_ui(game.Players[game.player_idx]);
          }
       }
       update_c_station_ui(game.companies[game.moving]);
@@ -433,12 +441,12 @@ function veto_done(name) {
       });
       for(var p = 0; p < game.companies[game.moving].holders.length; p++)
       {
-         update_message(game.players[p].name+' trading '+game.players[p].shares[game.moving]+' for '+Math.floor(game.players[p].shares[game.moving]/2)+' of '+game.companies[game.move_target[2]].name);
-         for(var i = game.players[p].shares[game.moving]; i >= 2; i-=2) {
+         update_message(game.Players[p].name+' trading '+game.Players[p].shares[game.moving]+' for '+Math.floor(game.Players[p].shares[game.moving]/2)+' of '+game.companies[game.move_target[2]].name);
+         for(var i = game.Players[p].shares[game.moving]; i >= 2; i-=2) {
             take_share(p, game.move_target[2], true);
          }
-         game.players[p].shares[game.moving] = 0;
-         update_p_stock_ui(game.players[p]);
+         game.Players[p].shares[game.moving] = 0;
+         update_p_stock_ui(game.Players[p]);
       };
       game.companies[game.moving].holders = [];
       for (var p = 0; p < game.max_player; p++) {
@@ -472,7 +480,13 @@ function veto_done(name) {
    game.moving = undefined;
    next_action();
 }
+
 function isolate(name) {
+   game_cmd_send("isolate:"+game.player_idx+':'+game.name);
+   isolate_cmd(name);
+}
+
+function isolate_cmd(name) {
       var co_count = 0;
       game.companies[name].shares = 0;
       update_c_stock_ui(game.companies[name]);
@@ -582,6 +596,20 @@ function click_train(x,y,c_nam) {
       show_valid();
       return true;
 }
+function get_good(e) {
+      // take good.
+      if (game.Players[game.player_idx].tokens[e.attr('town')] == undefined) {
+         game.Players[game.player_idx].tokens[e.attr('town')] = '';
+      }
+      if (game.Players[game.player_idx].goods[e.attr('good')] == undefined) {
+         game.Players[game.player_idx].goods[e.attr('good')] = 0;
+      }
+      game.Players[game.player_idx].tokens[e.attr('town')] += e.attr('good')
+      game.Players[game.player_idx].goods[e.attr('good')] += 1; 
+      update_p_token_ui(game.Players[game.player_idx]);
+      e.remove();
+      next_action();
+}
 function clickhex(h) {
    var loc;
    var e;
@@ -591,18 +619,8 @@ function clickhex(h) {
    }
    e = $(h.srcElement);
    if (e.hasClass('goods')) {
-      // take good.
-      if (game.players[game.player_idx].tokens[e.attr('town')] == undefined) {
-         game.players[game.player_idx].tokens[e.attr('town')] = '';
-      }
-      if (game.players[game.player_idx].goods[e.attr('good')] == undefined) {
-         game.players[game.player_idx].goods[e.attr('good')] = 0;
-      }
-      game.players[game.player_idx].tokens[e.attr('town')] += e.attr('good')
-      game.players[game.player_idx].goods[e.attr('good')] += 1; 
-      update_p_token_ui(game.players[game.player_idx]);
-      e.remove();
-      next_action();
+      get_good(e);
+      game_cmd_send("good:"+game.player_idx+':'+e.attr('id'));
       return;
    }
    while (!e.hasClass('middle') && !e.hasClass('hex')) {
@@ -629,6 +647,7 @@ function clickhex(h) {
    game.valid.forEach(function (l) {
       if (x == l[0] && y == l[1]) {
          game.move_target = l;
+         game_cmd_send("move:"+game.player_idx+':'+x+':'+y+':'+game.moving+':'+(game.valid.length != 1));
          place_train(game.moving, x, y, game.valid.length != 1);
          did_something = true;
          return;
@@ -665,12 +684,18 @@ function clickhex(h) {
    });
    if (cell[0] == undefined && !((train != undefined)|| (station != undefined))) {
       if (place_station([x,y], game.player_idx)) {
-        next_action();
+        game_cmd_send("station:"+game.player_idx+':'+x+':'+y);
       }
    }
 }
 
 function start()
+{
+   start_cmd(true);
+   game_cmd_send("start:"+game.player_order.join(':'));
+}
+
+function start_cmd(order_players)
 {
    var map = $('#map');
    var table;
@@ -716,38 +741,44 @@ function start()
    });
    $('#map').click(clickhex)
 
-    var tbl = document.getElementById('players');
+    var tbl = document.getElementById('Players');
     var rows = tbl.getElementsByTagName('tr');
     var r;
-    game.players = [{},{},{},{}],
-    game.player_order = [];
+    game.Players = [{},{},{},{}]
+    if (order_players) {
+       game.player_order = [];
+    }
     game.max_player = 0;
     for(var i=0; i < 4; i++) {
-        game.players[i].shares = [];
-        game.players[i].tokens = [];
-        game.players[i].goods = [];
-        game.players[i].money = 0;
+        game.Players[i].shares = [];
+        game.Players[i].tokens = [];
+        game.Players[i].goods = [];
+        game.Players[i].money = 0;
         var ap = document.getElementById("p"+i+"_name");
         if (ap.value == '') {
             var ap = document.getElementById("p"+i);
             ap.hidden = true;
         } else {
-            game.players[i].idx=i;
-            game.players[i].row=rows[i+1];
-            game.players[i].name=ap.value;
-            game.players[i].stations = game_cfg.stations;
-            game.player_order.push(i);
+            game.Players[i].idx=i;
+            game.Players[i].row=rows[i+1];
+            game.Players[i].name=ap.value;
+            game.Players[i].stations = game_cfg.stations;
+            if (order_players) {
+               game.player_order.push(i);
+            }
             game.max_player++;
         }
-       update_p_station_ui(game.players[i]);
+       update_p_station_ui(game.Players[i]);
     }
-    game.player_order.shuffle()
+    if (order_players) {
+       game.player_order.shuffle()
+    }
 
-    // Show players in turn order
+    // Show Players in turn order
     var after = rows[0];
     for(var i=0; i< game.max_player; i++) {
         var prow;
-        prow=game.players[game.player_order[i]].row;
+        prow=game.Players[game.player_order[i]].row;
         after.parentNode.insertBefore(prow.parentNode.removeChild(prow), after.nextSibling);
         after=prow;
     }
@@ -760,7 +791,7 @@ function start()
       var row = $('#'+loc[0]+'_'+loc[1]+' .middle');
          row.append($("<span/>", {html:'&nbsp;', style:'background:'+color+';'}));
       for(var i = 0; i < 3; i++) {
-         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods', 'town':color, 'good':goods[i], style:'background:'+color+';'}));
+         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods', 'town':color, 'good':goods[i], 'id': loc[0]+'_'+loc[1]+'_g'+i, style:'background:'+color+';'}));
       }
       game.loc[loc[0]+'_'+loc[1]] = ['c',color];
    });
@@ -817,7 +848,7 @@ function start()
 
    game.co_list.forEach(function (c_nam) {
       var c = game.companies[c_nam];
-      game.players.forEach(function (p) {
+      game.Players.forEach(function (p) {
          if (p.idx == undefined) {
             return;
          }
@@ -833,6 +864,7 @@ function start()
 function end() {
    // Per good, pay 6/3
    // Per remaining company pay 1/tc for stations and stock
+   game.end = true;
    update_message("Game over",false);
    for (var c in game.companies) {
       if (!game.companies.hasOwnProperty(c)) {
@@ -918,7 +950,7 @@ function update_c_stock_ui(c)
   for(var p in c.holders) {
     var l;
     if (! (c.holders[p] > 0)) { continue; }
-    l = $('<div/>', {html: game.players[p].name+': '+c.holders[p]});
+    l = $('<div/>', {html: game.Players[p].name+': '+c.holders[p]});
     h.append(l);
   }
   h = $('#'+c.name+'_shares');
@@ -932,7 +964,7 @@ function update_c_station_ui(c)
   for(var p in c.stations) {
     var l;
     if (! (c.stations[p] > 0)) { continue; }
-    l = $('<div/>', {html: game.players[p].name+': '+c.stations[p]});
+    l = $('<div/>', {html: game.Players[p].name+': '+c.stations[p]});
     h.append(l);
   }
   h = $('#'+c.name+'_shares');
@@ -954,4 +986,56 @@ function show_valid()
    game.valid.forEach(function (l) {
       $('#'+l[0]+'_'+l[1]+" .middle").addClass('valid');
    });
+}
+
+// Multi screen interface
+function game_cmd(c, data)
+{
+   var cmd = data.split(':');
+   console.log("rx: "+cmd);
+
+   if (cmd[0] == 'name') {
+      var ap = document.getElementById("p"+cmd[1]+"_name");
+      ap.value = cmd[2];
+      var ap = document.getElementById("p"+cmd[1]+"_peer");
+      ap.innerText = c.peer;
+      game.Players[+cmd[1]].peer = c.peer;
+   }
+   else if (cmd[0] == 'bid') {
+      bid_cmd(cmd[2]);
+   } else if (cmd[0] == 'station') {
+      place_station([cmd[2],cmd[3]], cmd[1]);
+   } else if (cmd[0] == 'move') {
+      click_train(+game.companies[cmd[4]].train[0],
+                  +game.companies[cmd[4]].train[1],
+                  cmd[4]);
+      show_valid();
+      game.valid.forEach(function (l) {
+         if (cmd[2] == l[0] && cmd[3] == l[1]) {
+            game.move_target = l;
+         }
+      });
+      place_train(cmd[4], cmd[2], cmd[3], cmd[5]);
+   } else if (cmd[0] == 'good') {
+      get_good($('#'+cmd[2]));
+   } else if (cmd[0] == 'close') {
+      isolate_cmd(cmd[1]);
+   } else if (cmd[0] == 'start') {
+      game.player_order = cmd.slice(1);
+      start_cmd(false);
+   } else if (cmd[0] == 'end') {
+      end();
+   }
+}
+
+function update_name(p)
+{
+   var ap = document.getElementById("p"+p+"_name");
+   game_cmd_send("name:"+p+":"+ ap.value);
+}
+
+function update_bid(p)
+{
+   var ap = document.getElementById("p"+p+"_bid");
+   game_cmd_send("bid:"+p+":"+ ap.value);
 }
