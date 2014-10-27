@@ -16,6 +16,7 @@ var connectedPeers = {};
 // Show this peer's ID.
 peer.on('open', function(id){
   $('#pid').text(id);
+  connectedPeers[id] = 1;     // Connected to myself.
 });
 
 // Await connections from others
@@ -56,21 +57,35 @@ function connect(c) {
         });
   } else if (c.label === 'game') {
     c.on('data', function(data) {
+         console.log("rx: "+data);
+         var cmd = data.split(':');
+         if (cmd[0] == "peers") {
+            for (p in cmd) {
+               if (cmd[p] == "peers") {
+                  continue;
+               }
+               if (cmd[p] in connectedPeers) {
+                  continue;
+               }
+               connectToPeer(cmd[p]);
+            }
+         }
          game_cmd(c,data);
     });
+    connectedPeers[c.peer] = 1;
+    var peers = [];
+    for (p in connectedPeers) {
+        if (connectedPeers.hasOwnProperty(p)) {
+            peers.push(p);
+        }
+    }
+    game_cmd_send("peers:"+peers.join(':'));
   }
 }
 
-$(document).ready(function() {
-
-   if (util.supports.data) {
-      $('#webrtc').show();
-   }
-  // Connect to a peer
-  $('#connect').click(function() {
-    requestedPeer = $('#rid').val();
+function connectToPeer(requestedPeer) {
     if (!connectedPeers[requestedPeer]) {
-      // Create 2 connections, one labelled chat and another labelled game.
+      // Create 2 connections, one labeled chat and another labeled game.
       var c = peer.connect(requestedPeer, {
         label: 'chat',
         serialization: 'none',
@@ -88,6 +103,17 @@ $(document).ready(function() {
       f.on('error', function(err) { alert(err); });
     }
     connectedPeers[requestedPeer] = 1;
+}
+
+$(document).ready(function() {
+
+   if (util.supports.data) {
+      $('#webrtc').show();
+   }
+  // Connect to a peer
+  $('#connect').click(function() {
+    requestedPeer = $('#rid').val();
+    connectToPeer(requestedPeer);
   });
 
   // Close a connection.
@@ -118,12 +144,31 @@ $(document).ready(function() {
 function game_cmd_send(data)
 {
    console.log('cmd: '+data);
-    eachActiveConnection(function(c, $c) {
+    eachValidConnection(function(c, $c) {
       if (c.label === 'game') {
         c.send(data);
       }
     });
 }
+
+  // Goes through each valid peer and calls FN on its connections.
+  function eachValidConnection(fn) {
+    var actives = $('.connection');
+    var checkedIds = {};
+    actives.each(function() {
+      var peerId = $(this).attr('id');
+
+      if (!checkedIds[peerId]) {
+        var conns = peer.connections[peerId];
+        for (var i = 0, ii = conns.length; i < ii; i += 1) {
+          var conn = conns[i];
+          fn(conn, $(this));
+        }
+      }
+
+      checkedIds[peerId] = 1;
+    });
+  }
 
   // Goes through each active peer and calls FN on its connections.
   function eachActiveConnection(fn) {
