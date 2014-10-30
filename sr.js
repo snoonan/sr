@@ -76,7 +76,7 @@ function place_train_action(player, bid, company, x,y)
 function place_train_cmd(player, bid, company, x,y)
 {
    /// XXX Fix from/last
-   var log_entry = {'action':'train', 'co':company, 'player':player, 'bid':bid, 'to':[x,y], 'from':[x,y], 'last':[x,y] };
+   var log_entry = {'action':'train', 'company':company, 'player':player, 'bid':bid, 'to':[x,y], 'from':[x,y], 'last':[x,y] };
    game_log.push(log_entry);
    do_move_train(player, bid, company, x,y);
 }
@@ -116,7 +116,7 @@ function take_good_action(player, town, good)
 
 function take_good_cmd(player, town, good)
 {
-   var log_entry = {'action':'good', 'player':player, 'good':[town,good] };
+   var log_entry = {'action':'good', 'player':player, 'town':town, 'good':good };
    game_log.push(log_entry);
    do_move_good(player, town, good, true);
 }
@@ -670,15 +670,30 @@ function pay_city(t, count, price) {
 function game_cmd(c, data)
 {
    var cmd = data.split(':');
-   console.log("rx: "+cmd);
 
-   if (cmd[0] == 'name') {
+   if (cmd[0] == 'log') {
+      if (game_log.length > cmd[1]) {
+         if (log_to_string(cmd[1]) != cmd.slice(2).join(':')) {
+            alert('Log mismatch, local: #'+cmd[1]+': '+log_to_string(cmd[1])+'\n'+c.peer+': '+cmd.slice(2).join(':'));
+         }
+         return;
+      } else if (game_log.length == cmd[1]) {
+         // Do not have this entry, parse it as external command
+         cmd.shift();
+         cmd.shift();
+      } else {
+         // Far future, just drop it.
+         return;
+      }
+   }
+
+   if (cmd[0] == 'player') {
       var ap = document.getElementById("p"+cmd[1]+"_name");
       ap.value = cmd[2];
       var ap = document.getElementById("p"+cmd[1]+"_peer");
-      ap.innerText = c.peer;
+      ap.innerText = cmd[3]
       game.Players[+cmd[1]].peer = c.peer;
-      log_entry = {'action':'player', 'slot':cmd[1], 'name':cmd[2], 'peer':c.peer };
+      var log_entry = {'action':'player', 'slot':cmd[1], 'name':cmd[2], 'peer':cmd[3] };
       game_log.push(log_entry);
    }
    if (cmd[0] == 'add_station') {
@@ -693,18 +708,78 @@ function game_cmd(c, data)
       force_close_cmd(cmd[1]);
    } else if (cmd[0] == 'start') {
       start_cmd(cmd.slice(1));
+   } else if (cmd[0] == 'peers') {
+      send_log();
    } else if (cmd[0] == 'end') {
       end();
    }
 }
 
+
+function send_log()
+{
+   for (var i = 0; i < game_log.length; i++) {
+      var cmd='log:'+i+':';
+
+      cmd += log_to_string(i);
+      game_cmd_send(cmd);
+   }
+}
+
+function save_log()
+{
+   var cmd='';
+   for (var i = 0; i < game_log.length; i++) {
+
+      cmd += log_to_string(i)+'\n';
+   }
+   document.location.href = 'data:application/binary;charset=UTF-8,'+encodeURIComponent(cmd)
+}
+
+function log_to_string(i)
+{
+      var e = game_log[i];
+      var cmd;
+
+      cmd = e['action']+':';
+      if (e['action'] == 'start') {
+         cmd+= e['order'];
+      } else if (e['action'] == 'train') {
+         cmd+= e['player']+':';
+         cmd+= e['bid']+':';
+         cmd+= e['company']+':';
+         cmd+= e['to'][0]+':';
+         cmd+= e['to'][1];
+      } else if (e['action'] == 'rem_station') {
+         cmd+= e['player']+':';
+         cmd+= e['town']+':';
+         cmd+= e['good'];
+      } else if (e['action'] == 'add_station') {
+         cmd+= e['player']+':';
+         cmd+= e['station'][0]+':';
+         cmd+= e['station'][1];
+      } else if (e['action'] == 'good') {
+         cmd+= e['player']+':';
+         cmd+= e['good'][0]+':';
+         cmd+= e['good'][1];
+      } else if (e['action'] == 'close') {
+         cmd+= e['company'];
+      } else if (e['action'] == 'player') {
+         cmd+= e['slot']+':';
+         cmd+= e['name']+':';
+         cmd+= e['peer'];
+      }
+      return cmd
+}
 // This screen interface
 
 // User action handlers
 function update_name(p)
 {
    var ap = document.getElementById("p"+p+"_name");
-   game_cmd_send("name:"+p+":"+ ap.value);
+   var log_entry = {'action':'player', 'slot':p, 'name':ap.value, 'peer':$('#pid').text() };
+   game_log.push(log_entry);
+   game_cmd_send("player:"+p+":"+ ap.value+':'+$('#pid').text());
 }
 
 function start()
