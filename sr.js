@@ -71,12 +71,11 @@ function start_cmd(order)
 function place_train_action(player, bid, company, x,y)
 {
    game_cmd_send('train:'+player+':'+bid+':'+company+':'+x+':'+y);
-   place_train_cmd(player, bid, company, x,y);
+   place_train_cmd(player, +bid, company, x,y);
 }
 function place_train_cmd(player, bid, company, x,y)
 {
-   /// XXX Fix from/last
-   var log_entry = {'action':'train', 'company':company, 'player':player, 'bid':bid, 'to':[x,y], 'prev_bid':game.bid, 'prev_winner':game.veto_winner, 'from':game.companies[company].from, 'last':game.companies[company].last, 'proposed':game.companies[company].proposed };
+   var log_entry = {'action':'train', 'company':company, 'player':player, 'bid':bid, 'to':[x,y], 'prev_bid':game.bid, 'prev_bidder': game.veto, 'prev_end': game.veto_end, 'prev_winner':game.veto_winner, 'from':game.companies[company].from, 'last':game.companies[company].last, 'proposed':game.companies[company].proposed };
    game_log.push(log_entry);
    do_move_train(player, bid, company, x,y);
 }
@@ -165,10 +164,10 @@ function prev_action() {
     if(game.end) {
        return;    // Can not undo end. Sorry.
     }
+    game.actions += 1;
     if (game.actions == 2) {
        prev_player();
     }
-    game.actions += 1;
 }
 
 function prev_player() {
@@ -203,11 +202,11 @@ function  do_move_good(player, town, good)
 
 function  undo_move_good(player, town, good)
 {
-      game.Players[game.player_idx].tokens[town] = game.Players[game.player_idx].tokens[town].replace(good,'');
-      game.Players[game.player_idx].goods[good] -= 1; 
-      update_p_token_ui(game.Players[game.player_idx]);
-      good_add_ui(town, good);
       prev_action();
+      game.Players[player].tokens[town] = game.Players[player].tokens[town].replace(good,'');
+      game.Players[player].goods[good] -= 1; 
+      update_p_token_ui(game.Players[player]);
+      good_add_ui(town, good);
 }
 
 function force_close(name) {
@@ -237,22 +236,22 @@ function train_options(company)
       var move_to;
       if (c.train[0] - c.last[0] == -1 && c.train[1] - c.last[1] == -1) {
          move_to = [[x,y-1],[x-1,y-1],[x-1,y]];
-      }
+      } else
       if (c.train[0] - c.last[0] == -1 && c.train[1] - c.last[1] == 0) {
          move_to = [[x,y+1],[x-1,y],[x-1,y-1]];
-      }
+      } else
       if (c.train[0] - c.last[0] == 0  && c.train[1] - c.last[1] == -1) {
          move_to = [[x-1,y-1], [x,y-1], [x+1,y]];
-      }
+      } else
       if (c.train[0] - c.last[0] == 0  && c.train[1] - c.last[1] == 1) {
          move_to = [[x-1,y], [x,y+1], [x+1,y+1]];
-      }
+      } else
       if (c.train[0] - c.last[0] == 1  && c.train[1] - c.last[1] == 0) {
          move_to = [[x,y-1], [x+1,y], [x+1,y+1]];
-      }
+      } else
       if (c.train[0] - c.last[0] == 1  && c.train[1] - c.last[1] == 1) {
          move_to = [[x,y+1], [x+1,y], [x+1,y+1]];
-      }
+      } else
       if (c.train[0] - c.last[0] == 0  && c.train[1] - c.last[1] == 0) {
          // Starting position
          move_to = [[x-1,y-1], [x-1,y], [x,y-1], [x,y+1], [x+1,y], [x+1,y+1]];
@@ -288,14 +287,19 @@ function train_options(company)
                touch.push(test);
             }
             if (loc && (loc[0] == 'r' || loc[0] == 'T')) {
-               if (c.name == loc[1]) {
+               var track_owner = loc[1];
+               // Walk the mergers to get to the current holder.
+               while(game.companies[track_owner].merged) {
+                  track_owner = game.companies[track_owner].merged;
+               }
+               if (c.name == track_owner) {
                   return;
                }
-               if (merge && merge != loc[1]) {
+               if (merge && merge != track_owner) {
                   merge = 'xxx';
                   return; // Not good more than one merge
                }
-               merge = loc[1];
+               merge = track_owner;
             }
          });
          if (merge == 'xxx') {
@@ -341,6 +345,10 @@ function select_train(x,y,company) {
    */
 function do_move_train(player, bid, company, x,y)
 {
+   // For remote boards.
+   game.companies[company].train = game.companies[company].from;
+   game.valid = train_options(company);
+
    game.companies[company].train = [x,y];
    game.companies[company].proposed = [x,y];
    if( game.new_bid > 0) {
@@ -350,7 +358,9 @@ function do_move_train(player, bid, company, x,y)
    }
    move_head(company, x, y);
    if (game.veto == player) {
-      veto_next();
+      if (!veto_next()) {
+         veto_done(company);
+      }
       return;
    }
    game.moving = company;
@@ -361,10 +371,8 @@ function do_move_train(player, bid, company, x,y)
    take_share(player, company, false)
    update_message('Moving '+company, true);
 
-   if (game.valid.length == 1) {
+   if (game.valid.length == 1 || veto_next() == false) {
       veto_done(company);
-   } else {
-      veto_next();
    }
 }
 
@@ -382,8 +390,7 @@ function veto_next() {
            (game.veto_end != undefined && game.veto == game.veto_winner) // no one else can vote
           )
        {
-          veto_done(game.moving);
-          return;
+          return false;
        }
        if (game.veto_end == undefined) {
           // Remember this so we give the current player one last chance to veto.
@@ -392,7 +399,7 @@ function veto_next() {
        if (game.Players[game.veto].shares[game.moving] > game.bid ||
           (game.Players[game.veto].shares[game.moving] == game.bid && game.veto == game.player_idx)) {
           update_auction_ui();
-          return;
+          return true;
        }
    }
 }
@@ -403,6 +410,7 @@ function veto_done(name) {
    var at_loc = game.loc[loc[0]+'_'+loc[1]];
    game.moved = name;
    game.veto = undefined;
+   game.veto_end = undefined;
    final_move_head(name);
    if (game.bid) {
       update_message(game.Players[game.veto_winner].name+' paying '+game.bid+' shares', false);
@@ -415,6 +423,7 @@ function veto_done(name) {
       //Touched a station, remember it, and maybe give a passanger.
       var owner = +at_loc[1];
       game.companies[name].stations[owner] += 1;
+      game.companies[name].station_list[loc[0]+'_'+loc[1]] = at_loc;
       if (owner != game.veto_winner && game.veto_winner == game.player_idx) { // If it is not my station AND I decided to go here.
          if (game.passengers > 0) {
             game.Players[game.player_idx].goods['p'] = (game.Players[game.player_idx].goods['p'] || 0) + 1;
@@ -422,6 +431,7 @@ function veto_done(name) {
             update_p_token_ui(game.Players[game.player_idx]);
          }
       }
+      game.veto_winner = -1;
       update_c_station_ui(game.companies[game.moving]);
    }
    // Touched something
@@ -459,22 +469,29 @@ function veto_done(name) {
       var log_entry = {'action':'_merge', 'co':game.moving, 'with':merge_with };
       game_log.push(log_entry);
       pay_town(game.moving, 'holders');
+      // Walk the mergers to get to the current holder.
+      while(game.companies[merge_with].merged) {
+         merge_with = game.companies[merge_with].merged;
+      }
       game.companies[game.moving].merged = merge_with;
+      game.companies[merge_with].merged_with.push(game.moving);
       for(var p = 0; p < game.companies[game.moving].holders.length; p++)
       {
-         if (game.companies[game.moving].holders[p] == 0) {
+         if (game.companies[game.moving].holders[p] == undefined || game.companies[game.moving].holders[p] == 0) {
             continue;
          }
          update_message(game.Players[p].name+' trading '+game.Players[p].shares[game.moving]+' for '+Math.floor(game.Players[p].shares[game.moving]/2)+' of '+merge_with);
+         var log_entry = {'action':'_merge_stock', 'co':game.moving, 'player': p, 'with':merge_with, 'shares': game.Players[p].shares[game.moving]};
+         game_log.push(log_entry);
          for(var i = game.Players[p].shares[game.moving]; i >= 2; i-=2) {
+            return_share(game.moving, p);
+            return_share(game.moving, p);
             take_share(p, merge_with, true);
          }
-         var log_entry = {'action':'_merge_share', 'co':game.moving, 'player': p, 'with':merge_with, 'shares': game.Players[p].shares[game.moving]};
-         game_log.push(log_entry);
-         game.Players[p].shares[game.moving] = 0;
-         update_p_stock_ui(game.Players[p]);
+         if(game.Players[p].shares[game.moving]) {
+            return_share(game.moving, p);
+         }
       };
-      game.companies[game.moving].holders = [];
 
       update_c_station_ui(game.companies[game.moving]);
       update_c_touches_ui(game.companies[game.moving]);
@@ -484,7 +501,7 @@ function veto_done(name) {
       update_c_touches_ui(game.companies[merge_with]);
       $('.'+game.moving).css('backgroundColor',merge_with);
       $('.'+game.moving).addClass(merge_with);
-      $('#'+game.companies[game.moving].name+'_train').remove();
+      $('#'+game.companies[game.moving].name+'_train').hide();
       // Replace the train with track.
       own_track(game.companies[game.moving].train, merge_with);
    }
@@ -504,8 +521,71 @@ function veto_done(name) {
    next_action();
 }
 
-function undo_move_train(player, bid, company, x,y)
+function undo_move_train(player, company, bid, p_bid, p_bidder, p_end, p_winner, to, from, last, proposed)
 {
+   // Reset state to before this move.
+   game.veto = p_bidder;
+   game.bid = p_bid;
+   game.veto_winner = p_winner;
+   game.veto_end = p_end;
+   game.moving = company;
+
+   if (p_bidder == undefined) {
+      game.bid = 0;
+      game.veto = player;
+      game.veto_winner = player;
+      game.veto_end = undefined;
+   }
+   move_head(company, from[0], from[1]);
+   game.companies[company].train = from;
+   game.companies[company].proposed = proposed;
+   if (proposed) {
+      move_head(company, proposed[0], proposed[1]);
+   }
+
+   var train_loc = to;
+   train_loc = train_loc[0]+'_'+train_loc[1];
+   if ( game.loc[train_loc][0] == ['T']) {    // Train is here, move it back.
+      var winner = player;
+      if (bid == -1) {
+         bid = p_bid;
+         winner = p_winner;
+      }
+      while(bid) {
+         bid -= 1;
+         return_share(company, winner);
+      }
+      // undo train movement
+      disown_track(from, company);
+      game.loc[from[0]+'_'+from[1]] = ['T',company];
+      game.loc[train_loc] = [undefined];    // Default to empty cell
+      if (game.companies[company].station_list.hasOwnProperty(train_loc)) {
+         // holds a station, so put it back.
+         delete game.companies[company].station_list[train_loc];
+         game.loc[train_loc] = game.companies[company].station_list[train_loc];
+         game.companies[company].stations[game.loc[train_loc][1]] -= 1;
+         update_c_station_ui(game.companies[game.moving]);
+      }
+      game.companies[company].train = from;
+      game.companies[company].from  = from;
+      game.companies[company].last  = last;
+      game.moving = company;
+      game.valid = train_options(company);
+   }
+
+   if (p_bidder == undefined) {
+      return_share(company, player);
+      game.moving = undefined;
+      game.moved = undefined; // XXX Need to record what this WAS.
+      game.veto = undefined;
+      game.valid = [];
+      prev_action();
+      auction_ui(false);
+   } else {
+      auction_ui(true);
+      update_auction_ui();
+   }
+   show_valid();
 }
 
 function final_move_head(name)
@@ -524,22 +604,32 @@ function final_move_head(name)
    game.loc[loc[0]+'_'+loc[1]] = ['T',name];
    update_message('', true);
 }
+
 function own_track(loc, name)
 {
    if(game.loc[loc[0]+'_'+loc[1]][0] == 't') {
       // starting location, skip.
       return;
    }
-   game.companies[name].track.push(loc[0]+'_'+loc[1]);
-   if (game.loc[loc[0]+'_'+loc[1]][0] != 'r') {
-      game.track -= 1;
-   }
+   game.track -= 1;
    game.loc[loc[0]+'_'+loc[1]] = ['r',name];
    update_track_ui();
    if (game.track == 0) {
       game.end = true;
    }
    track_ui(name, loc[0], loc[1]);
+}
+
+function disown_track(loc, name)
+{
+   if(game.loc[loc[0]+'_'+loc[1]][0] == 't') {
+      // starting location, skip.
+      return;
+   }
+   game.track += 1;
+   game.loc[loc[0]+'_'+loc[1]] = [undefined];
+   update_track_ui();
+   track_ui(undefined, loc[0], loc[1]);
 }
 
 function take_share(p, c, overdraft)
@@ -591,7 +681,7 @@ function sum_companies_per(company, attr)
      if (!game.companies.hasOwnProperty(c)) {
         continue;
      }
-     if ((c != company) && (game.companies[c].merged != company)) {
+     if (game.companies[company].merged_with.indexOf(c) == -1) {
         continue;
      }
      for(var p=0; p < 4; p++) {
@@ -609,7 +699,7 @@ function set_companies(company, attr)
      if (!game.companies.hasOwnProperty(c)) {
         continue;
      }
-     if ((game.companies[c].name != company) && (game.companies[c].merged != company)) {
+     if (game.companies[company].merged_with.indexOf(c) == -1) {
         continue;
      }
       game.companies[c][attr].forEach(function (a) {
@@ -846,13 +936,17 @@ function do_log_cmd(cmd)
    } else if (cmd[0] == 'rem_station') {
       remove_station_cmd(cmd[1],cmd[2], cmd[3]);
    } else if (cmd[0] == 'train') {
-      place_train_cmd(cmd[1],cmd[2], cmd[3], cmd[4], cmd[5]);
+      place_train_cmd(cmd[1],+cmd[2], cmd[3], cmd[4], cmd[5]);
    } else if (cmd[0] == 'good') {
       take_good_cmd(cmd[1], cmd[2], cmd[3]);
    } else if (cmd[0] == 'close') {
       force_close_cmd(cmd[1]);
    } else if (cmd[0] == 'peers') {
       send_log();
+   } else if (cmd[0] == 'undo') {
+      while ( game_log.length > +cmd[1]) {
+         undo_log_cmd(game_log.pop());
+      }
    } else if (cmd[0] == 'start') {
       start_cmd(cmd.slice(1));
    }
@@ -863,35 +957,60 @@ function undo_log_cmd(entry)
    var more = false;
 
    if (entry['action'] == 'player') {
-      var n = document.getElementById("p"+entry['slot']+"_name");
-      var p = document.getElementById("p"+entry['slot']+"_peer");
-      n.value = 'unknown';
-      p.innerText = 'missing link';
-      game.Players[+entry['slot']].peer = undefined;
+      // Nothing to do....
    }
    if (entry['action'] == 'add_station') {
-      do_remove_station(entry['player'],entry['station'][0], entry['station'][1]);
       prev_action();
+      do_remove_station(entry['player'],entry['station'][0], entry['station'][1]);
    } else if (entry['action'] == 'rem_station') {
       do_place_station(entry['player'],entry['station'][0], entry['station'][1]);
    } else if (entry['action'] == 'train') {
-      //do_move_train(player, bid, company, [x,y])
-      undo_move_train(cmd[1],cmd[2], cmd[3], cmd[6], cmd[7]);
+      undo_move_train(entry['player'], entry['company'], entry['bid'], entry['prev_bid'], entry['prev_bidder'], entry['prev_end'], entry['prev_winner'], entry['to'], entry['from'], entry['last'], entry['proposed']);
    } else if (entry['action'] == 'good') {
-      //undo_move_good(player, town, good);
-      undo_move_good(entry['player'], entry['town'], entry['good']);
       prev_action();
+      undo_move_good(entry['player'], entry['town'], entry['good']);
    } else if (entry['action'] == 'close') {
       reopen_company(entry['co']);
    } else if (entry['action'] == 'start') {
-      start_cmd(entry['order']);
+      // can not undo start
    } else if (entry['action'] == 'end') {
-      end();
+      // can not undo end
    } else if (entry['action'] == '_merge') {
+      $('.'+entry['co']).css('backgroundColor',entry['co']);
+      $('.'+entry['co']).removeClass(entry['with']);
+      $('#'+game.companies[entry['co']].name+'_train').show();
+      // Replace the train with track.
+      disown_track(game.companies[entry['co']].train);
+      game.loc[game.companies[entry['co']].train[0]+'_'+game.companies[entry['co']].train[1]] = ['T',entry['co']];
+      game.companies[entry['co']].merged = undefined;
+      game.companies[entry['with']].merged_with.splice(game.companies[entry['with']].merged_with.indexOf(entry['co']),1);
+      update_c_station_ui(game.companies[entry['co']]);
+      update_c_touches_ui(game.companies[entry['co']]);
+      update_c_station_ui(game.companies[entry['with']]);
+      update_c_touches_ui(game.companies[entry['with']]);
       more = true;
    } else if (entry['action'] == '_pay') {
+      game.Players[entry['player']].money -= entry['amount'];
+      update_p_money_ui(game.Players[entry['player']]);
       more = true;
    } else if (entry['action'] == '_merge_stock') {
+      if (game.companies[entry['co']].shares == 0 && game.companies[entry['co']].holders.length == 0)
+      {
+         // First to undo, give co 16 shares to start with.
+         game.companies[entry['co']].shares = 16;
+      }
+      for(var i = entry['shares']; i >= 2; i-=2) {
+         return_share(entry['with'], entry['player']);
+      }
+      for(var i = entry['shares']; i >= 1; i-=1) {
+         take_share(entry['player'], entry['co'],true);
+      }
+      more = true;
+   } else if (entry['action'] == '_touch') {
+      var loc = entry['touch'][0]+'_'+entry['touch'][1];
+      var idx = game.companies[entry['co']].touches.indexOf(loc);
+      game.companies[entry['co']].touches.splice(idx, 1);
+      update_c_touches_ui(game.companies[entry['co']]);
       more = true;
    }
    return more;
@@ -960,6 +1079,7 @@ function undo()
 {
    /* The while is to cover the internal log entries for merging */
    while(undo_log_cmd(game_log.pop()));
+   game_cmd_send("undo:"+game_log.length);
 }
 
 // User action handlers
@@ -980,7 +1100,7 @@ function start()
 
 function bid_pass() {
    game.new_bid = undefined;
-   place_train_action(game.veto, -1, game.moving,game.companies[game.moving].train[0],game.companies[game.moving].train[1]);
+   place_train_action(game.veto, -1, game.moving,game.companies[game.moving].proposed[0],game.companies[game.moving].proposed[1]);
 }
 
 function bid() {
@@ -1014,7 +1134,7 @@ function clickhex(h)
    if (e.attr('land') == ' ') {
       return;
    }
-   loc = e.parent().attr('id').split('_');
+   loc = e.parent().attr('id').slice(1).split('_');
    var did_something = false;
    var x = +loc[0];
    var y = +loc[1];
@@ -1124,11 +1244,11 @@ function update_p_station_ui(p)
 }
 function place_station_ui(player, x, y)
 {
-   $('#'+x+'_'+y+" .middle").append($('<span/>', {"class":'p'+player+' station', html:"S"}));
+   $('#h'+x+'_'+y+" .middle").append($('<span/>', {"class":'p'+player+' station', html:"S"}));
 }
 function remove_station_ui(player, x, y)
 {
-   $('#'+x+'_'+y+" .middle .station").remove();
+   $('#h'+x+'_'+y+" .middle .station").remove();
 }
 function update_p_money_ui(p)
 {
@@ -1176,7 +1296,7 @@ function update_c_station_ui(c)
   var h = $('#'+c.name+'_stations');
 
   h.empty();
-  var val = sum_companies_per(c, 'stations');
+  var val = sum_companies_per(c.name, 'stations');
   for(var p in c.stations) {
     var l;
     if (! (val[p] > 0)) { continue; }
@@ -1202,19 +1322,21 @@ function update_track_ui(c)
 
 function track_ui(company, x, y)
 {
-   $('#'+x+'_'+y+' .middle .track').remove()
-   $('#'+x+'_'+y+" .middle").append($('<span/>', {"class":game.companies[company].color+' track', html:"&nbsp;"}));
+   $('#h'+x+'_'+y+' .middle .track').remove()
+   if (company) {
+      $('#h'+x+'_'+y+" .middle").append($('<span/>', {"class":game.companies[company].color+' track', html:"&nbsp;"}));
+   }
 }
 
 function move_head(name, x,y) {
-   $('#'+x+'_'+y+" .middle").append($('#'+name+'_train'));
+   $('#h'+x+'_'+y+" .middle").append($('#'+name+'_train'));
 }
 
 function show_valid()
 {
    $('.valid').removeClass('valid');
    game.valid.forEach(function (l) {
-      $('#'+l[0]+'_'+l[1]+" .middle").addClass('valid');
+      $('#h'+l[0]+'_'+l[1]+" .middle").addClass('valid');
    });
 }
 
@@ -1232,7 +1354,7 @@ function good_add_ui(town, good)
       if (color != town) {
          return;
       }
-      var row = $('#'+loc[0]+'_'+loc[1]+' .middle');
+      var row = $('#h'+loc[0]+'_'+loc[1]+' .middle');
 
       row.append($("<span/>", {html:'&nbsp;'+good+'&nbsp;', 'class':'goods', 'town':town, 'good':good, style:'background:'+town+';'}));
    })
@@ -1249,10 +1371,12 @@ function do_start(player_order)
    $('#start').hide();
    x = 0; y = 0;
    start_col = 0;
+   game.veto_winner = -1;
    game.loc = {};
    game.valid = [];
    show_valid();
    game.track = game_cfg.track;
+   update_track_ui();
    game.passengers = game_cfg.passengers;
    game_cfg.map.forEach(function (l) {
       var col = $("<div>", { "class":"hex-row"});
@@ -1265,7 +1389,7 @@ function do_start(player_order)
       x = start_col;
       var out = l.match(/.{1,2}/g);
       out.forEach(function(c) {
-         var wrapper = $("<div>",{id:x+"_"+y, "class":"hex"});
+         var wrapper = $("<div>",{id:'h'+x+"_"+y, "class":"hex"});
          var cell = $("<div>",{"class":"top", land:c.charAt(0), city:c.charAt(1)});
          wrapper.append(cell);
          cell = $("<div>",{"class":"middle", land:c.charAt(0), city:c.charAt(1)});
@@ -1307,7 +1431,6 @@ function do_start(player_order)
             }
         } else {
             game.Players[i].idx=i;
-            game.Players[i].row=rows[i+1];
             game.Players[i].name=ap.value;
             game.Players[i].stations = game_cfg.stations;
             game.max_player++;
@@ -1320,7 +1443,7 @@ function do_start(player_order)
     var after = rows[0];
     for(var i=0; i< game.max_player; i++) {
         var prow;
-        prow=game.Players[game.player_order[i]].row;
+        prow=rows[game.player_order[i]+1];
         after.parentNode.insertBefore(prow.parentNode.removeChild(prow), after.nextSibling);
         after=prow;
     }
@@ -1330,9 +1453,9 @@ function do_start(player_order)
       var goods = l[1];
       var color = l[2];
 
-      var row = $('#'+loc[0]+'_'+loc[1]+' .middle');
+      var row = $('#h'+loc[0]+'_'+loc[1]+' .middle');
       for(var i = 0; i < 3; i++) {
-         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods', 'town':color, 'good':goods[i], 'id': loc[0]+'_'+loc[1]+'_g'+i, style:'background:'+color+';'}));
+         row.append($("<span/>", {html:'&nbsp;'+goods[i]+'&nbsp;', 'class':'goods', 'town':color, 'good':goods[i], 'id': 'h'+loc[0]+'_'+loc[1]+'_g'+i, style:'background:'+color+';'}));
       }
       game.loc[loc[0]+'_'+loc[1]] = ['c',color];
    });
@@ -1356,8 +1479,10 @@ function do_start(player_order)
                      'color':color,
                      'holders':[],
                      'stations':[],
-                     'track':[],
+                     'station_list':{},
                      'touches':[],
+                     'merged':undefined,
+                     'merged_with':[name],
                      };
       game.companies[name] = company;
       game.co_list.push(name);
@@ -1379,7 +1504,7 @@ function do_start(player_order)
 
       table.append(row);
       // Place markers.
-      $('#'+x+'_'+y+" .middle").append($('<span/>', {"id":company.name+"_train", "class":company.color+'  train', html:"&nbsp;&nbsp;"}));
+      $('#h'+x+'_'+y+" .middle").append($('<span/>', {"id":company.name+"_train", "class":company.color+'  train', html:"&nbsp;&nbsp;"}));
       // Fill the train->from->last pipeline.
       game.companies[name].touches = [x+'_'+y];
       game.companies[name].from = game.companies[name].train;
