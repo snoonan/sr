@@ -1033,8 +1033,12 @@ function send_log()
 {
    for (var i = 0; i < game_log.length; i++) {
       var cmd='log:'+i+':';
+      var log = log_to_string(i);
 
-      cmd += log_to_string(i);
+      if (log == '') {
+         continue
+      }
+      cmd += log;
       game_cmd_send(cmd);
    }
 }
@@ -1082,6 +1086,8 @@ function log_to_string(i)
          cmd+= e['slot']+':';
          cmd+= e['name']+':';
          cmd+= e['peer'];
+      } else {
+         return '';
       }
       return cmd
 }
