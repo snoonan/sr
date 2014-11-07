@@ -225,6 +225,13 @@ function force_close(name) {
          game.end = true;
       }
 }
+
+function reopen_company(company)
+{
+      game.companies[company].shares = 16;
+      update_c_stock_ui(game.companies[company]);
+}
+
 function train_options(company)
 {
       var c = game.companies[company];
@@ -348,6 +355,11 @@ function do_move_train(player, bid, company, x,y)
    // For remote boards.
    game.companies[company].train = game.companies[company].from;
    game.valid = train_options(company);
+   game.valid.forEach(function (l) {
+      if (x == l[0] && y == l[1]) {
+         game.move_target = l;
+      }
+   });
 
    game.companies[company].train = [x,y];
    game.companies[company].proposed = [x,y];
@@ -495,6 +507,8 @@ function veto_done(name) {
 
       update_c_station_ui(game.companies[game.moving]);
       update_c_touches_ui(game.companies[game.moving]);
+      var log_entry = {'action':'_close', 'company':game.moving };
+      game_log.push(log_entry);
       force_close(game.moving);
       update_c_stock_ui(game.companies[game.moving]);
       update_c_station_ui(game.companies[merge_with]);
@@ -925,22 +939,22 @@ function do_log_cmd(cmd)
    if (cmd[0] == 'player') {
       var n = document.getElementById("p"+cmd[1]+"_name");
       var p = document.getElementById("p"+cmd[1]+"_peer");
-      var log_entry = {'action':'player', 'slot':cmd[1], 'name':cmd[2], 'peer':cmd[3], 'prev_name':n.val(), 'prev_peer': p.innerText};
+      var log_entry = {'action':'player', 'slot':cmd[1], 'name':cmd[2], 'peer':cmd[3], 'prev_name':n.value, 'prev_peer': p.innerText};
       n.value = cmd[2];
       p.innerText = cmd[3];
       game.Players[+cmd[1]].peer = cmd[3];
       game_log.push(log_entry);
    }
    if (cmd[0] == 'add_station') {
-      place_station_cmd(cmd[1],cmd[2], cmd[3]);
+      place_station_cmd(+cmd[1],+cmd[2], +cmd[3]);
    } else if (cmd[0] == 'rem_station') {
-      remove_station_cmd(cmd[1],cmd[2], cmd[3]);
+      remove_station_cmd(+cmd[1],+cmd[2], +cmd[3]);
    } else if (cmd[0] == 'train') {
-      place_train_cmd(cmd[1],+cmd[2], cmd[3], cmd[4], cmd[5]);
+      place_train_cmd(+cmd[1],+cmd[2], cmd[3], +cmd[4], +cmd[5]);
    } else if (cmd[0] == 'good') {
-      take_good_cmd(cmd[1], cmd[2], cmd[3]);
+      take_good_cmd(+cmd[1], cmd[2], cmd[3]);
    } else if (cmd[0] == 'close') {
-      force_close_cmd(cmd[1]);
+      force_close_cmd(+cmd[1]);
    } else if (cmd[0] == 'peers') {
       send_log();
    } else if (cmd[0] == 'undo') {
@@ -970,11 +984,14 @@ function undo_log_cmd(entry)
       prev_action();
       undo_move_good(entry['player'], entry['town'], entry['good']);
    } else if (entry['action'] == 'close') {
-      reopen_company(entry['co']);
+      reopen_company(entry['company']);
    } else if (entry['action'] == 'start') {
       // can not undo start
    } else if (entry['action'] == 'end') {
       // can not undo end
+   } else if (entry['action'] == '_close') {
+      reopen_company(entry['company']);
+      more = true;
    } else if (entry['action'] == '_merge') {
       $('.'+entry['co']).css('backgroundColor',entry['co']);
       $('.'+entry['co']).removeClass(entry['with']);
@@ -994,11 +1011,6 @@ function undo_log_cmd(entry)
       update_p_money_ui(game.Players[entry['player']]);
       more = true;
    } else if (entry['action'] == '_merge_stock') {
-      if (game.companies[entry['co']].shares == 0 && game.companies[entry['co']].holders.length == 0)
-      {
-         // First to undo, give co 16 shares to start with.
-         game.companies[entry['co']].shares = 16;
-      }
       for(var i = entry['shares']; i >= 2; i-=2) {
          return_share(entry['with'], entry['player']);
       }
@@ -1045,7 +1057,7 @@ function log_to_string(i)
 
       cmd = e['action']+':';
       if (e['action'] == 'start') {
-         cmd+= e['order'];
+         cmd+= e['order'].join(':');
       } else if (e['action'] == 'train') {
          cmd+= e['player']+':';
          cmd+= e['bid']+':';
@@ -1146,9 +1158,7 @@ function clickhex(h)
    if (did_something) {
       return;
    }
-   game.valid.forEach(function (l) {
-      if (x == l[0] && y == l[1]) {
-         game.move_target = l;
+   if ( e.hasClass('valid')) {
          if (game.veto == undefined || game.new_bid != undefined) {
             var bid_player = game.veto;
             if (bid_player == undefined) {
@@ -1157,8 +1167,7 @@ function clickhex(h)
             place_train_action(bid_player, $('#bid').val(), game.moving, x, y);
             did_something = true;
          }
-      }
-   });
+   }
 
    // done something already or in process of moving a train, don't need to consider any more options.
    if (did_something || game.moving) {
@@ -1414,6 +1423,9 @@ function do_start(player_order)
     var r;
     game.Players = [{},{},{},{}]
     game.max_player = 0;
+    for(var o=0; o < 4; o++) {
+       player_order[o] = +o; // Force numeric values as remote gets them as strings.
+    }
     for(var i=0; i < 4; i++) {
         game.Players[i].shares = [];
         game.Players[i].tokens = [];
@@ -1443,7 +1455,7 @@ function do_start(player_order)
     var after = rows[0];
     for(var i=0; i< game.max_player; i++) {
         var prow;
-        prow=rows[game.player_order[i]+1];
+        prow=rows[+game.player_order[i]+1];
         after.parentNode.insertBefore(prow.parentNode.removeChild(prow), after.nextSibling);
         after=prow;
     }
