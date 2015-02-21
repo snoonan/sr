@@ -1111,7 +1111,10 @@ function update_name(p)
 
 function start()
 {
-   order = [0,1,2,3].shuffle();
+   order = [0,1,2,3];
+    var s = [];
+    while (order.length) s.push(order.splice(Math.random() * order.length, 1)[0]);
+    while (s.length) order.push(s.pop());
 
    start_action(order);
 }
@@ -1544,12 +1547,4 @@ function do_start(player_order)
    game.player_idx = game.player_order[game.max_player];
    game.actions = 0;
    next_action();
-}
-
-/* utils */
-Array.prototype.shuffle = function() {
-    var s = [];
-    while (this.length) s.push(this.splice(Math.random() * this.length, 1)[0]);
-    while (s.length) this.push(s.pop());
-    return this;
 }

@@ -9,14 +9,21 @@ var peer = new Peer({
   // Use a TURN server for more network support
   config: {'iceServers': [
     { url: 'stun:stun.l.google.com:19302' }
-  ]} /* Sample servers, please use appropriate ones */
+  ], 'debug':3} /* Sample servers, please use appropriate ones */
 });
 var connectedPeers = {};
 
 // Show this peer's ID.
 peer.on('open', function(id){
+  var other = window.location.hash;
+
   $('#pid').text(id);
+  window.location.hash = '#'+id;
   connectedPeers[id] = 1;     // Connected to myself.
+
+  if (other != '') {
+     connectToPeer(other.slice(1));
+  }
 });
 
 // Await connections from others
@@ -72,14 +79,17 @@ function connect(c) {
          }
          game_cmd(c,data);
     });
-    connectedPeers[c.peer] = 1;
-    var peers = [];
-    for (p in connectedPeers) {
-        if (connectedPeers.hasOwnProperty(p)) {
-            peers.push(p);
-        }
-    }
-    game_cmd_send("peers:"+peers.join(':'));
+    c.on('open', function (c) {
+       var peers = [];
+       connectedPeers[c.peer] = 1;
+       for (p in connectedPeers) {
+           if (connectedPeers.hasOwnProperty(p)) {
+               peers.push(p);
+           }
+       }
+       console.log("peer"+c.peer);
+       game_cmd_send("peers:"+peers.join(':'));
+    });
   }
 }
 
